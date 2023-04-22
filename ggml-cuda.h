@@ -30,6 +30,8 @@ extern cudaStream_t   g_cudaStream;
 void   ggml_init_cublas(void);
 void * ggml_cuda_pool_malloc(size_t size, size_t * actual_size);
 void   ggml_cuda_pool_free(void * ptr, size_t size);
+void   ggml_cuda_cache_init(size_t size);
+void * ggml_cuda_cache_get(void * src, size_t size, bool * cached);
 
 void dequantize_row_q4_0_cuda(const void * vx, float * y, int k, cudaStream_t stream);
 void dequantize_row_q4_1_cuda(const void * vx, float * y, int k, cudaStream_t stream);

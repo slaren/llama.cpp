@@ -308,6 +308,65 @@ void * ggml_cuda_pool_malloc(size_t size, size_t * actual_size) {
     return ptr;
 }
 
+#include <unordered_map>
+static std::unordered_map<void *, void *> g_cuda_cache;
+#define MAX_CUDA_CACHE 512
+// static std::pair<void *, void *> g_cuda_cache[MAX_CUDA_CACHE];
+
+static void * g_cuda_cache_ptr = nullptr;
+
+void ggml_cuda_cache_init(size_t size) {
+    if (g_cuda_cache_ptr == nullptr) {
+        printf("allocating cuda cache: %zu MB\n", size / 1024 / 1024);
+        CUDA_CHECK(cudaMalloc((void **) &g_cuda_cache_ptr, size));
+    }
+}
+
+void * ggml_cuda_cache_get(void * src, size_t size, bool * cached) {
+    scoped_spin_lock lock(g_cuda_pool_lock);
+
+#if 1
+    auto it = g_cuda_cache.find(src);
+    if (it != g_cuda_cache.end()) {
+        *cached = true;
+        return it->second;
+    }
+    *cached = false;
+    void * ptr;
+    // CUDA_CHECK(cudaMalloc((void **) &ptr, size));
+    ptr = g_cuda_cache_ptr;
+    g_cuda_cache_ptr = (char *) g_cuda_cache_ptr + size;
+    g_cuda_cache[src] = ptr;
+    return ptr;
+#else
+    int first_free = -1;
+    for (int i = 0; i < MAX_CUDA_CACHE; ++i) {
+        if (g_cuda_cache[i].first == nullptr && first_free == -1) {
+            first_free = i;
+            break;
+        }
+        if (g_cuda_cache[i].first == src) {
+            *cached = true;
+            return g_cuda_cache[i].second;
+        }
+    }
+
+    if (first_free == -1) {
+        fprintf(stderr, "ERROR: cuda cache full, increase MAX_CUDA_CACHE\n");
+        exit(1);
+    }
+
+    *cached = false;
+    void * ptr;
+    // CUDA_CHECK(cudaMalloc((void **) &ptr, size));
+    ptr = g_cuda_cache_ptr;
+    g_cuda_cache_ptr = (char *) g_cuda_cache_ptr + size;
+    g_cuda_cache[first_free] = std::make_pair(src, ptr);
+    return ptr;
+#endif
+}
+
+
 void ggml_cuda_pool_free(void * ptr, size_t size) {
     scoped_spin_lock lock(g_cuda_pool_lock);
 

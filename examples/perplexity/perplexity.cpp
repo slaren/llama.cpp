@@ -51,7 +51,7 @@ void perplexity(llama_context * ctx, const gpt_params & params) {
             logits.insert(logits.end(), batch_logits, batch_logits + batch_size * n_vocab);
         }
         auto end_t = std::chrono::high_resolution_clock::now();
-        if (i == 0) {
+        if (i < 5) {
             const float seconds = std::chrono::duration<float>(end_t - start_t).count();
             printf("%.2f seconds per pass - ETA ", seconds);
             int total_seconds = (int)(seconds * seq_count);

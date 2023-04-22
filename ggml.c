@@ -8645,15 +8645,17 @@ static void ggml_compute_forward_mul_mat_q_f32(
 #if defined(GGML_USE_CUBLAS)
         const float alpha = 1.0f;
         const float beta = 0.0f;
-        const int x_ne = ne01 * ne10;
+        const int x_ne = ne01 * ne00;
         const int y_ne = ne11 * ne10;
         const int d_ne = ne11 * ne01;
 
-        size_t x_size, y_size, d_size, q_size;
+        size_t x_size, y_size, d_size;
+        bool q_cached;
         float *d_X = ggml_cuda_pool_malloc(sizeof(float) * x_ne, &x_size);
         float *d_Y = ggml_cuda_pool_malloc(sizeof(float) * y_ne, &y_size);
         float *d_D = ggml_cuda_pool_malloc(sizeof(float) * d_ne, &d_size);
-        float *d_Q = ggml_cuda_pool_malloc(GGML_TYPE_SIZE[type] * x_ne / GGML_BLCK_SIZE[type], &q_size);
+        float *d_Q = ggml_cuda_cache_get(src0->data, GGML_TYPE_SIZE[type] * x_ne / GGML_BLCK_SIZE[type], &q_cached);
+        //float *d_Q = ggml_cuda_pool_malloc(GGML_TYPE_SIZE[type] * x_ne / GGML_BLCK_SIZE[type], &q_size);
 
         void (*dequantize_row_q_cuda)(const void * x, float * y, int k, cudaStream_t stream)  = NULL;
         if (type == GGML_TYPE_Q4_0) {
@@ -8692,11 +8694,12 @@ static void ggml_compute_forward_mul_mat_q_f32(
                 float * d = (float *) ((char *) dst->data + i02*nb2 + i03*nb3);
 
 #if defined(GGML_USE_CUBLAS)
-                // copy and dequantize on device
-                CUDA_CHECK(
-                    cudaMemcpyAsync(d_Q, (char *) src0->data + i03*nb03 + i02*nb02,
-                        GGML_TYPE_SIZE[type] * x_ne / GGML_BLCK_SIZE[type], cudaMemcpyHostToDevice, g_cudaStream));
-
+                if (!q_cached) {
+                    // copy and dequantize on device
+                    CUDA_CHECK(
+                        cudaMemcpyAsync(d_Q, (char *) src0->data + i03*nb03 + i02*nb02,
+                            GGML_TYPE_SIZE[type] * x_ne / GGML_BLCK_SIZE[type], cudaMemcpyHostToDevice, g_cudaStream));
+                }
                 dequantize_row_q_cuda(d_Q, d_X, ne01 * ne00, g_cudaStream);
                 CUDA_CHECK(cudaGetLastError());
 #else
@@ -8741,7 +8744,7 @@ static void ggml_compute_forward_mul_mat_q_f32(
         ggml_cuda_pool_free(d_X, x_size);
         ggml_cuda_pool_free(d_Y, y_size);
         ggml_cuda_pool_free(d_D, d_size);
-        ggml_cuda_pool_free(d_Q, q_size);
+        //ggml_cuda_pool_free(d_Q, q_size);
 #endif
         //printf("CBLAS = %f ms, %d x %d x %d x %d\n", (ggml_perf_time_us() - t0)/1000.0, ne0, ne1, ne2, ne3);
 
@@ -11493,6 +11496,12 @@ void ggml_graph_compute(struct ggml_context * ctx, struct ggml_cgraph * cgraph) 
     {
         size_t work_size = 0;
 
+        int x_ne_max = 0;
+        int y_ne_max = 0;
+        int d_ne_max = 0;
+        size_t q_cache_size = 0;
+
+
         // thread scheduling for the different operations
         for (int i = 0; i < cgraph->n_nodes; i++) {
             struct ggml_tensor * node = cgraph->nodes[i];
@@ -11581,11 +11590,27 @@ void ggml_graph_compute(struct ggml_context * ctx, struct ggml_cgraph * cgraph) 
 #endif
                         } else if (node->src0->type == GGML_TYPE_F32 && node->src1->type == GGML_TYPE_F32) {
                             cur = 0;
+#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS)
+                            if (ggml_compute_forward_mul_mat_use_blas(node->src0, node->src1, node)) {
+                                node->n_tasks = 1;
+                            }
+#endif
                         } else if (ggml_is_quantized(node->src0->type) && node->src1->type == GGML_TYPE_F32) {
 #if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS)
                             if (ggml_compute_forward_mul_mat_use_blas(node->src0, node->src1, node)) {
                                 node->n_tasks = 1;
                                 cur = GGML_TYPE_SIZE[GGML_TYPE_F32]*(node->src0->ne[0]*node->src0->ne[1]);
+                                int ne00 = node->src0->ne[0];
+                                int ne01 = node->src0->ne[1];
+                                int ne10 = node->src1->ne[0];
+                                int ne11 = node->src1->ne[1];
+                                const int x_ne = ne01 * ne00;
+                                const int y_ne = ne11 * ne10;
+                                const int d_ne = ne11 * ne01;
+                                x_ne_max = MAX(x_ne_max, x_ne);
+                                y_ne_max = MAX(y_ne_max, y_ne);
+                                d_ne_max = MAX(d_ne_max, d_ne);
+                                q_cache_size += GGML_TYPE_SIZE[node->src0->type] * x_ne / GGML_BLCK_SIZE[node->src0->type];
                             } else
 #endif
                             {
@@ -11706,6 +11731,20 @@ void ggml_graph_compute(struct ggml_context * ctx, struct ggml_cgraph * cgraph) 
 
         if (cgraph->work != NULL && work_size > cgraph->work_size) {
             GGML_ASSERT(false); // TODO: better handling
+        }
+
+        if (x_ne_max > 0) {
+            size_t x_size, y_size, d_size;
+            void* d_X = ggml_cuda_pool_malloc(sizeof(float) * x_ne_max, &x_size);
+            void* d_Y = ggml_cuda_pool_malloc(sizeof(float) * y_ne_max, &y_size);
+            void* d_D = ggml_cuda_pool_malloc(sizeof(float) * d_ne_max, &d_size);
+            //printf("%s: preallocated cuda memory: x=%zu, y=%zu, d=%zu\n", __func__, x_size, y_size, d_size);
+            // return to pool
+            ggml_cuda_pool_free(d_X, x_size);
+            ggml_cuda_pool_free(d_Y, y_size);
+            ggml_cuda_pool_free(d_D, d_size);
+
+            ggml_cuda_cache_init(q_cache_size);
         }
 
         if (work_size > 0 && cgraph->work == NULL) {
