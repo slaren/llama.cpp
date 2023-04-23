@@ -661,6 +661,7 @@ struct llama_model_loader {
             LLAMA_ASSERT(lt.ne.size() == 1);
             tensor = ggml_new_tensor_1d(ggml_ctx, lt.type, lt.ne.at(0));
         }
+        strncpy(tensor->name, lt.name.c_str(), sizeof(tensor->name) - 1);
         LLAMA_ASSERT(lt.ggml_tensor == NULL); // if this fails, we called get_tensor twice on the same tensor
         lt.ggml_tensor = tensor;
         num_ggml_tensors_created++;

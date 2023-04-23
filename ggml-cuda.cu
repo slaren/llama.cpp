@@ -302,6 +302,7 @@ void * ggml_cuda_pool_malloc(size_t size, size_t * actual_size) {
             return ptr;
         }
     }
+    printf("allocating cuda buffer: %zu MB\n", size / 1024 / 1024);
     void * ptr;
     CUDA_CHECK(cudaMalloc((void **) &ptr, size));
     *actual_size = size;

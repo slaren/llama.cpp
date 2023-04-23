@@ -324,7 +324,7 @@ extern "C" {
         int64_t perf_time_us;
 
         void * data;
-        char padding[8];
+        char name[40];
     };
 
     // computation graph

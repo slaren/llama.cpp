@@ -4539,7 +4539,7 @@ struct ggml_tensor * ggml_new_tensor_impl(
         /*.perf_cycles  =*/ 0,
         /*.perf_time_us =*/ 0,
         /*.data         =*/ (data == NULL && !ctx->no_alloc) ? (void *)(result + 1) : data,
-        /*.pad          =*/ { 0 },
+        /*.name         =*/ "unnamed"
     };
 
     // TODO: this should not be needed as long as we don't rely on aligned SIMD loads
@@ -8403,8 +8403,8 @@ static void ggml_compute_forward_mul_mat_f16_f32(
         const int d_ne = ne11 * ne01;
 
         size_t x_size, y_size, d_size;
-        float *d_X = ggml_cuda_pool_malloc(sizeof(float) * x_ne, &x_size);
-        float *d_Y = ggml_cuda_pool_malloc(sizeof(float) * y_ne, &y_size);
+        float *d_X = ggml_cuda_pool_malloc(sizeof(ggml_fp16_t) * x_ne, &x_size);
+        float *d_Y = ggml_cuda_pool_malloc(sizeof(ggml_fp16_t) * y_ne, &y_size);
         float *d_D = ggml_cuda_pool_malloc(sizeof(float) * d_ne, &d_size);
 #else
         float * const wdata = params->wdata;
@@ -11496,9 +11496,9 @@ void ggml_graph_compute(struct ggml_context * ctx, struct ggml_cgraph * cgraph) 
     {
         size_t work_size = 0;
 
-        int x_ne_max = 0;
-        int y_ne_max = 0;
-        int d_ne_max = 0;
+        size_t x_sz_max = 0;
+        size_t y_sz_max = 0;
+        size_t d_sz_max = 0;
         size_t q_cache_size = 0;
 
 
@@ -11582,6 +11582,17 @@ void ggml_graph_compute(struct ggml_context * ctx, struct ggml_cgraph * cgraph) 
                                 //printf("src0: ne0 = %d, ne1 = %d, ne = %d\n", node->src0->ne[0], node->src0->ne[1], node->src0->ne[0]*node->src0->ne[1]);
                                 //printf("src1: ne0 = %d, ne1 = %d, ne = %d\n", node->src1->ne[0], node->src1->ne[1], node->src1->ne[0]*node->src1->ne[1]);
                                 //printf("cur = %zu\n", cur);
+
+                                int ne00 = node->src0->ne[0];
+                                int ne01 = node->src0->ne[1];
+                                int ne10 = node->src1->ne[0];
+                                int ne11 = node->src1->ne[1];
+                                const int x_ne = ne01 * ne00;
+                                const int y_ne = ne11 * ne10;
+                                const int d_ne = ne11 * ne01;
+                                x_sz_max = MAX(x_sz_max, sizeof(ggml_fp16_t) * x_ne);
+                                y_sz_max = MAX(y_sz_max, sizeof(ggml_fp16_t) * y_ne);
+                                d_sz_max = MAX(d_sz_max, sizeof(float) * d_ne);
                             } else {
                                 cur = GGML_TYPE_SIZE[GGML_TYPE_F16]*ggml_nelements(node->src1);
                             }
@@ -11593,13 +11604,6 @@ void ggml_graph_compute(struct ggml_context * ctx, struct ggml_cgraph * cgraph) 
 #if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS)
                             if (ggml_compute_forward_mul_mat_use_blas(node->src0, node->src1, node)) {
                                 node->n_tasks = 1;
-                            }
-#endif
-                        } else if (ggml_is_quantized(node->src0->type) && node->src1->type == GGML_TYPE_F32) {
-#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS)
-                            if (ggml_compute_forward_mul_mat_use_blas(node->src0, node->src1, node)) {
-                                node->n_tasks = 1;
-                                cur = GGML_TYPE_SIZE[GGML_TYPE_F32]*(node->src0->ne[0]*node->src0->ne[1]);
                                 int ne00 = node->src0->ne[0];
                                 int ne01 = node->src0->ne[1];
                                 int ne10 = node->src1->ne[0];
@@ -11607,9 +11611,27 @@ void ggml_graph_compute(struct ggml_context * ctx, struct ggml_cgraph * cgraph) 
                                 const int x_ne = ne01 * ne00;
                                 const int y_ne = ne11 * ne10;
                                 const int d_ne = ne11 * ne01;
-                                x_ne_max = MAX(x_ne_max, x_ne);
-                                y_ne_max = MAX(y_ne_max, y_ne);
-                                d_ne_max = MAX(d_ne_max, d_ne);
+                                x_sz_max = MAX(x_sz_max, sizeof(float) * x_ne);
+                                y_sz_max = MAX(y_sz_max, sizeof(float) * y_ne);
+                                d_sz_max = MAX(d_sz_max, sizeof(float) * d_ne);
+                            }
+#endif
+                        } else if (ggml_is_quantized(node->src0->type) && node->src1->type == GGML_TYPE_F32) {
+#if defined(GGML_USE_ACCELERATE) || defined(GGML_USE_OPENBLAS) || defined(GGML_USE_CUBLAS)
+                            if (ggml_compute_forward_mul_mat_use_blas(node->src0, node->src1, node)) {
+                                node->n_tasks = 1;
+                                cur = GGML_TYPE_SIZE[GGML_TYPE_F32]*(node->src0->ne[0]*node->src0->ne[1]);
+
+                                int ne00 = node->src0->ne[0];
+                                int ne01 = node->src0->ne[1];
+                                int ne10 = node->src1->ne[0];
+                                int ne11 = node->src1->ne[1];
+                                const int x_ne = ne01 * ne00;
+                                const int y_ne = ne11 * ne10;
+                                const int d_ne = ne11 * ne01;
+                                x_sz_max = MAX(x_sz_max, sizeof(float) * x_ne);
+                                y_sz_max = MAX(y_sz_max, sizeof(float) * y_ne);
+                                d_sz_max = MAX(d_sz_max, sizeof(float) * d_ne);
                                 q_cache_size += GGML_TYPE_SIZE[node->src0->type] * x_ne / GGML_BLCK_SIZE[node->src0->type];
                             } else
 #endif
@@ -11733,17 +11755,19 @@ void ggml_graph_compute(struct ggml_context * ctx, struct ggml_cgraph * cgraph) 
             GGML_ASSERT(false); // TODO: better handling
         }
 
-        if (x_ne_max > 0) {
+        if (x_sz_max > 0) {
             size_t x_size, y_size, d_size;
-            void* d_X = ggml_cuda_pool_malloc(sizeof(float) * x_ne_max, &x_size);
-            void* d_Y = ggml_cuda_pool_malloc(sizeof(float) * y_ne_max, &y_size);
-            void* d_D = ggml_cuda_pool_malloc(sizeof(float) * d_ne_max, &d_size);
-            //printf("%s: preallocated cuda memory: x=%zu, y=%zu, d=%zu\n", __func__, x_size, y_size, d_size);
+            void* d_X = ggml_cuda_pool_malloc(x_sz_max, &x_size);
+            void* d_Y = ggml_cuda_pool_malloc(y_sz_max, &y_size);
+            void* d_D = ggml_cuda_pool_malloc(d_sz_max, &d_size);
+            //printf("%s: preallocated cuda memory: x=%zu MB, y=%zu MB, d=%zu MB\n", __func__, x_size/1024/1024, y_size/1024/1024, d_size/1024/1024);
             // return to pool
             ggml_cuda_pool_free(d_X, x_size);
             ggml_cuda_pool_free(d_Y, y_size);
             ggml_cuda_pool_free(d_D, d_size);
 
+        }
+        if (q_cache_size > 0) {
             ggml_cuda_cache_init(q_cache_size);
         }
 
