@@ -8120,6 +8120,7 @@ static void ggml_compute_forward_mul_mat_f32(
               struct ggml_tensor * dst) {
     int64_t t0 = ggml_perf_time_us();
     UNUSED(t0);
+    puts("ggml_compute_forward_mul_mat_f32");
 
     const int64_t ne00 = src0->ne[0];
     const int64_t ne01 = src0->ne[1];
@@ -8394,8 +8395,6 @@ static void ggml_compute_forward_mul_mat_f16_f32(
         }
 
 #if defined(GGML_USE_CUBLAS)
-        ggml_fp16_t * const wdata = params->wdata;
-
         const float alpha = 1.0f;
         const float beta = 0.0f;
         const int x_ne = ne01 * ne00;
@@ -8412,6 +8411,10 @@ static void ggml_compute_forward_mul_mat_f16_f32(
         for (int64_t i03 = 0; i03 < ne03; i03++) {
             for (int64_t i02 = 0; i02 < ne02; i02++) {
 #if defined(GGML_USE_CUBLAS)
+                const ggml_fp16_t * x = (ggml_fp16_t *) ((char *) src0->data + i02*nb02 + i03*nb03);
+                CUDA_CHECK(cudaMemcpyAsync(d_X, x, sizeof(ggml_fp16_t) * x_ne, cudaMemcpyHostToDevice, g_cudaStream));
+
+                ggml_fp16_t * const wdata = (ggml_fp16_t *) params->wdata + (i02 + i03 * ne02) * ne11 * ne10;
                 // with cuBlAS, instead of converting src0 to fp32, we convert src1 to fp16
                 {
                     size_t id = 0;
@@ -8433,15 +8436,10 @@ static void ggml_compute_forward_mul_mat_f16_f32(
 #endif
 
 #if defined(GGML_USE_CUBLAS)
-                const ggml_fp16_t * x = (ggml_fp16_t *) ((char *) src0->data + i02*nb02 + i03*nb03);
                 const ggml_fp16_t * y = (ggml_fp16_t *) wdata;
-
-                float * d = (float *) ((char *) dst->data + i02*nb2 + i03*nb3);
-
-                // copy data to device
-                CUDA_CHECK(cudaMemcpyAsync(d_X, x, sizeof(ggml_fp16_t) * x_ne, cudaMemcpyHostToDevice, g_cudaStream));
                 CUDA_CHECK(cudaMemcpyAsync(d_Y, y, sizeof(ggml_fp16_t) * y_ne, cudaMemcpyHostToDevice, g_cudaStream));
 
+                //CUDA_CHECK(cudaStreamSynchronize(g_cudaStream));
                 // compute
                 CUBLAS_CHECK(
                     cublasGemmEx(g_cublasH, CUBLAS_OP_T, CUBLAS_OP_N,
@@ -8453,6 +8451,7 @@ static void ggml_compute_forward_mul_mat_f16_f32(
                             CUBLAS_GEMM_DEFAULT));
 
                 // copy data to host
+                float * d = (float *) ((char *) dst->data + i02*nb2 + i03*nb3);
                 CUDA_CHECK(cudaMemcpyAsync(d, d_D, sizeof(float) * d_ne, cudaMemcpyDeviceToHost, g_cudaStream));
 #else
                 const float * x = wdata;
@@ -8697,10 +8696,11 @@ static void ggml_compute_forward_mul_mat_q_f32(
                 if (!q_cached) {
                     CUDA_CHECK(
                         cudaMemcpyAsync(d_Q, (char *) src0->data + i03*nb03 + i02*nb02,
-                            GGML_TYPE_SIZE[type] * x_ne / GGML_BLCK_SIZE[type], cudaMemcpyHostToDevice, g_cudaStream));
+                            GGML_TYPE_SIZE[type] * x_ne / GGML_BLCK_SIZE[type], cudaMemcpyHostToDevice, g_cudaStream2));
                 }
-                dequantize_row_q_cuda(d_Q, d_X, ne01 * ne00, g_cudaStream);
+                dequantize_row_q_cuda(d_Q, d_X, ne01 * ne00, g_cudaStream2);
                 CUDA_CHECK(cudaGetLastError());
+                CUDA_CHECK(cudaEventRecord(g_cudaEvent, g_cudaStream2));
 #else
                 {
                     size_t id = 0;
@@ -8716,6 +8716,9 @@ static void ggml_compute_forward_mul_mat_q_f32(
 #if defined(GGML_USE_CUBLAS)
                 // copy data to device
                 CUDA_CHECK(cudaMemcpyAsync(d_Y, y, sizeof(float) * y_ne, cudaMemcpyHostToDevice, g_cudaStream));
+
+                // wait for dequantization
+                CUDA_CHECK(cudaStreamWaitEvent(g_cudaStream, g_cudaEvent, 0));
 
                 // compute
                 CUBLAS_CHECK(

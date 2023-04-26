@@ -390,6 +390,8 @@ void ggml_cuda_pool_free(void * ptr, size_t size) {
 
 cublasHandle_t g_cublasH = NULL;
 cudaStream_t g_cudaStream = NULL;
+cudaStream_t g_cudaStream2 = NULL;
+cudaEvent_t g_cudaEvent = NULL;
 
 void ggml_init_cublas(void) {
     if (g_cublasH == NULL) {
@@ -399,6 +401,9 @@ void ggml_init_cublas(void) {
         CUDA_CHECK(cudaStreamCreateWithFlags(&g_cudaStream, cudaStreamNonBlocking));
 
         CUBLAS_CHECK(cublasSetStream(g_cublasH, g_cudaStream));
+
+        CUDA_CHECK(cudaStreamCreateWithFlags(&g_cudaStream2, cudaStreamNonBlocking));
+        CUDA_CHECK(cudaEventCreateWithFlags(&g_cudaEvent, cudaEventDisableTiming));
 
         // configure logging to stdout
         // CUBLAS_CHECK(cublasLoggerConfigure(1, 1, 0, NULL));

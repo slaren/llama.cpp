@@ -106,6 +106,7 @@ ifdef LLAMA_OPENBLAS
 endif
 ifdef LLAMA_CUBLAS
 	CFLAGS    += -DGGML_USE_CUBLAS -I/usr/local/cuda/include
+	CXXFLAGS  += -I/usr/local/cuda/include
 	LDFLAGS   += -lcublas -lculibos -lcudart -lcublasLt -lpthread -ldl -lrt -L/usr/local/cuda/lib64
 	OBJS      += ggml-cuda.o
 	NVCC      = nvcc
@@ -157,7 +158,7 @@ $(info )
 # Build library
 #
 
-ggml.o: ggml.c ggml.h
+ggml.o: ggml.c ggml.h ggml-cuda.h
 	$(CC)  $(CFLAGS)   -c $< -o $@
 
 llama.o: llama.cpp ggml.h llama.h llama_util.h

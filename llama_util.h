@@ -391,18 +391,36 @@ struct llama_mlock {
 };
 
 // Replacement for std::vector<uint8_t> that doesn't require zero-initialization.
+#include <cuda_runtime.h>
+#define CUDA_CHECK(err)                                                                 \
+    do {                                                                                \
+        cudaError_t err_ = (err);                                                       \
+        if (err_ != cudaSuccess) {                                                      \
+            fprintf(stderr, "CUDA error %d at %s:%d: %s\n", err_, __FILE__, __LINE__,   \
+                cudaGetErrorString(err_));                                              \
+            exit(1);                                                                    \
+        }                                                                               \
+    } while (0)
+
 struct llama_buffer {
     uint8_t * addr = NULL;
     size_t size = 0;
 
     void resize(size_t size) {
-        delete[] addr;
-        addr = new uint8_t[size];
+        //delete[] addr;
+        //addr = new uint8_t[size];
+
+        if (addr) cudaFreeHost(addr);
+        addr = NULL;
+        CUDA_CHECK(cudaMallocHost((void**)&addr, size));
+
         this->size = size;
     }
 
     ~llama_buffer() {
-        delete[] addr;
+        ////delete[] addr;
+        if (addr) cudaFreeHost(addr);
+        addr = NULL;
     }
 };
 #endif
