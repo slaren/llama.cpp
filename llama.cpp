@@ -1144,6 +1144,8 @@ static bool llama_eval_internal(
                         0, 2, 1, 3);
 
             // K * Q
+            strcpy(Q->name, "Q");
+            strcpy(K->name, "K");
             struct ggml_tensor * KQ = ggml_mul_mat(ctx0, K, Q);
 
             // KQ_scaled = KQ / sqrt(n_embd/n_head)
@@ -1167,6 +1169,8 @@ static bool llama_eval_internal(
                         il*n_ctx*ggml_element_size(kv_self.v)*n_embd);
 
 #if 1
+            strcpy(V->name, "V");
+            strcpy(KQ_soft_max->name, "KQ_soft_max");
             struct ggml_tensor * KQV = ggml_mul_mat(ctx0, V, KQ_soft_max);
 #else
             // make V contiguous in memory to speed up the matmul, however we waste time on the copy

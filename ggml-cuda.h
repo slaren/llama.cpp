@@ -27,6 +27,7 @@ extern "C" {
 extern cublasHandle_t g_cublasH;
 extern cudaStream_t   g_cudaStream;
 extern cudaStream_t   g_cudaStream2;
+extern cudaStream_t   g_cudaStreams[32];
 extern cudaEvent_t    g_cudaEvent;
 
 void   ggml_init_cublas(void);

@@ -325,6 +325,9 @@ extern "C" {
 
         void * data;
         char name[40];
+        /* gpu-agnostic flags that are only used for gpu (caching) stuff */
+        // bool is_const; // weights
+        // bool is_dirty; // modified
     };
 
     // computation graph

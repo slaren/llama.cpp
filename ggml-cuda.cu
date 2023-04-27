@@ -265,7 +265,7 @@ void dequantize_row_q8_0_cuda(const void * vx, float * y, int k, cudaStream_t st
 }
 
 // buffer pool for cuda
-#define MAX_CUDA_BUFFERS 16
+#define MAX_CUDA_BUFFERS 128
 
 struct scoped_spin_lock {
     std::atomic_flag& lock;
@@ -392,6 +392,7 @@ cublasHandle_t g_cublasH = NULL;
 cudaStream_t g_cudaStream = NULL;
 cudaStream_t g_cudaStream2 = NULL;
 cudaEvent_t g_cudaEvent = NULL;
+cudaStream_t g_cudaStreams[32] = { NULL };
 
 void ggml_init_cublas(void) {
     if (g_cublasH == NULL) {
@@ -404,6 +405,10 @@ void ggml_init_cublas(void) {
 
         CUDA_CHECK(cudaStreamCreateWithFlags(&g_cudaStream2, cudaStreamNonBlocking));
         CUDA_CHECK(cudaEventCreateWithFlags(&g_cudaEvent, cudaEventDisableTiming));
+
+        for (int i = 0; i < 32; ++i) {
+            CUDA_CHECK(cudaStreamCreateWithFlags(&g_cudaStreams[i], cudaStreamNonBlocking));
+        }
 
         // configure logging to stdout
         // CUBLAS_CHECK(cublasLoggerConfigure(1, 1, 0, NULL));
