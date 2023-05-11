@@ -13,7 +13,6 @@ Checks: >
     -readability-uppercase-literal-suffix,
     clang-analyzer-*,
     -clang-analyzer-security.insecureAPI.DeprecatedOrUnsafeBufferHandling,
-    concurrency-*,
     performance-*,
     portability-*,
 FormatStyle: none
