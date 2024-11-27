@@ -3266,6 +3266,8 @@ ggml_backend_t ggml_backend_cuda_init(int device) {
         /* .context   = */ ctx,
     };
 
+    printf("CUDA backend initialized on device %d\n", device);
+
     return cuda_backend;
 }
 
