@@ -1234,22 +1234,110 @@ jobs:
 
           ./gradlew build --no-daemon
 
-#  freeBSD-latest:
-#    runs-on: macos-12
-#    steps:
-#    - name: Clone
-#      uses: actions/checkout@v4
-#
-#    - name: Build
-#      uses: cross-platform-actions/action@v0.19.0
-#      with:
-#        operating_system: freebsd
-#        version: '13.2'
-#        hypervisor: 'qemu'
-#        run: |
-#            sudo pkg update
-#            sudo pkg install -y gmake automake autoconf pkgconf llvm15 openblas
-#            gmake CC=/usr/local/bin/clang15 CXX=/usr/local/bin/clang++15 -j `sysctl -n hw.ncpu`
+  windows-latest-mingw-cpu-x64:
+    runs-on: windows-latest
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [sse, avx, avx2, avx512]
+        include:
+          - { arch: sse,    defines: '-DGGML_FMA=OFF -DGGML_AVX=OFF -DGGML_AVX2=OFF -DGGML_AVX_VNNI=OFF -DGGML_F16C=OFF -DGGML_AVX512=OFF -DGGML_AVX512_VNNI=OFF -DGGML_AMX_TILE=OFF -DGGML_AMX_INT8=OFF' }
+          - { arch: avx,    defines: '-DGGML_FMA=ON  -DGGML_AVX=ON  -DGGML_AVX2=OFF -DGGML_AVX_VNNI=OFF -DGGML_F16C=ON  -DGGML_AVX512=OFF -DGGML_AVX512_VNNI=OFF -DGGML_AMX_TILE=OFF -DGGML_AMX_INT8=OFF' }
+          - { arch: avx2,   defines: '-DGGML_FMA=ON  -DGGML_AVX=ON  -DGGML_AVX2=ON  -DGGML_AVX_VNNI=OFF -DGGML_F16C=ON  -DGGML_AVX512=OFF -DGGML_AVX512_VNNI=OFF -DGGML_AMX_TILE=OFF -DGGML_AMX_INT8=OFF' }
+          - { arch: avx512, defines: '-DGGML_FMA=ON  -DGGML_AVX=ON  -DGGML_AVX2=ON  -DGGML_AVX_VNNI=ON  -DGGML_F16C=ON  -DGGML_AVX512=ON  -DGGML_AVX512_VNNI=ON  -DGGML_AMX_TILE=OFF -DGGML_AMX_INT8=OFF' }
+         #- { arch: amx,    defines: '-DGGML_FMA=ON  -DGGML_AVX=ON  -DGGML_AVX2=ON  -DGGML_AVX_VNNI=ON  -DGGML_F16C=ON  -DGGML_AVX512=ON  -DGGML_AVX512_VNNI=ON  -DGGML_AMX_TILE=ON  -DGGML_AMX_INT8=ON'  }
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+
+      - name: Install Ninja
+        run: |
+          choco install ninja
+
+      - name: Build using CMake
+        run: |
+            cmake -B build -G "Ninja Multi-Config" -DGGML_NATIVE=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_OPENMP=OFF ${{ matrix.defines }}
+            cmake --build build --config Release -t ggml-cpu
+
+      - name: Rename artifacts
+        run: mv build/bin/Release/ggml-cpu.dll ggml-cpu-${{ matrix.arch }}.dll
+
+      - name: Upload artifacts
+        if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/master' ) || github.event.inputs.create_release == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          path: ggml-cpu-${{ matrix.arch }}.dll
+          name: ggml-cpu-${{ matrix.arch }}.dll
+
+  windows-latest-mingw-x64:
+    runs-on: windows-latest
+
+    needs:
+      - windows-latest-mingw-cpu-x64
+
+    steps:
+      - name: Clone
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install Ninja
+        run: |
+          dir c:/mingw64
+          dir c:/mingw64/bin
+          choco install ninja
+
+      - name: Download curl for Windows
+        run: |
+          curl.exe -O https://curl.se/windows/dl-8.11.0_4/curl-8.11.0_4-win64-mingw.zip
+          7z x curl-8.11.0_4-win64-mingw.zip -ocurl
+
+      - name: Build using CMake
+        run: |
+          cmake -B build -G "Ninja Multi-Config" -DLLAMA_CURL=ON -DLLAMA_BUILD_TESTS=OFF -DBUILD_SHARED_LIBS=ON -DGGML_BACKEND_DL=ON -DGGML_NATIVE=OFF -DCURL_INCLUDE_DIR="curl/curl-8.11.0_4-win64-mingw/include/" -DCURL_LIBRARY="curl/curl-8.11.0_4-win64-mingw/lib/libcurl.dll.a"
+          cmake --build build --config Release -t llama-bench -t llama-cli -t llama-gguf-hash -t llama-gguf-split -t llama-imatrix -t llama-perplexity -t llama-quantize -t llama-simple -t llama-simple-chat -t llama-tokenize
+          cp curl/curl-8.11.0_4-win64-mingw/bin/libcurl-x64.dll build/bin/Release
+          cp c:/mingw64/bin/libwinpthread-1.dll build/bin/Release
+          cp c:/mingw64/bin/libstdc++-6.dll build/bin/Release
+          cp c:/mingw64/bin/libgcc_s_seh-1.dll build/bin/Release
+#          cp c:/mingw64/bin/libgomp-1.dll build/bin/Release
+
+      - name: Download CPU backend artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: 'ggml-cpu-*.dll'
+          path: build/bin/Release
+          merge-multiple: true
+
+      - name: Determine tag name
+        id: tag
+        shell: bash
+        run: |
+          BUILD_NUMBER="$(git rev-list --count HEAD)"
+          SHORT_HASH="$(git rev-parse --short=7 HEAD)"
+          if [[ "${{ env.BRANCH_NAME }}" == "master" ]]; then
+            echo "name=b${BUILD_NUMBER}" >> $GITHUB_OUTPUT
+          else
+            SAFE_NAME=$(echo "${{ env.BRANCH_NAME }}" | tr '/' '-')
+            echo "name=${SAFE_NAME}-b${BUILD_NUMBER}-${SHORT_HASH}" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Pack artifacts
+        id: pack_artifacts
+        if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/master' ) || github.event.inputs.create_release == 'true' }}
+        run: |
+          Copy-Item LICENSE .\build\bin\Release\llama.cpp.txt
+          7z a llama-${{ steps.tag.outputs.name }}-bin-mingw-cpu.zip .\build\bin\Release\*
+
+      - name: Upload artifacts
+        id: upload_artifacts
+        if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/master' ) || github.event.inputs.create_release == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          path: llama-${{ steps.tag.outputs.name }}-bin-mingw-cpu.zip
+          name: llama-${{ steps.tag.outputs.name }}-bin-mingw-cpu.zip
 
   release:
     if: ${{ ( github.event_name == 'push' && github.ref == 'refs/heads/master' ) || github.event.inputs.create_release == 'true' }}
@@ -1266,6 +1354,7 @@ jobs:
       - windows-latest-cmake-hip-release
       - macOS-latest-cmake-arm64
       - macOS-latest-cmake-x64
+      - windows-latest-mingw-x64
 
     steps:
       - name: Clone
@@ -1326,196 +1415,3 @@ jobs:
                 });
               }
             }
-
-#  ubuntu-latest-gcc:
-#    runs-on: ubuntu-latest
-#
-#    strategy:
-#      matrix:
-#        build: [Debug, Release]
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: Dependencies
-#        run: |
-#          sudo apt-get update
-#          sudo apt-get install build-essential
-#          sudo apt-get install cmake
-#
-#      - name: Configure
-#        run: cmake . -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-#
-#      - name: Build
-#        run: |
-#          make
-#
-#  ubuntu-latest-clang:
-#    runs-on: ubuntu-latest
-#
-#    strategy:
-#      matrix:
-#        build: [Debug, Release]
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: Dependencies
-#        run: |
-#          sudo apt-get update
-#          sudo apt-get install build-essential
-#          sudo apt-get install cmake
-#
-#      - name: Configure
-#        run: cmake . -DCMAKE_BUILD_TYPE=${{ matrix.build }} -DCMAKE_CXX_COMPILER=clang++ -DCMAKE_C_COMPILER=clang
-#
-#      - name: Build
-#        run: |
-#          make
-#
-#  ubuntu-latest-gcc-sanitized:
-#    runs-on: ubuntu-latest
-#
-#    strategy:
-#      matrix:
-#        sanitizer: [ADDRESS, THREAD, UNDEFINED]
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: Dependencies
-#        run: |
-#          sudo apt-get update
-#          sudo apt-get install build-essential
-#          sudo apt-get install cmake
-#
-#      - name: Configure
-#        run: cmake . -DCMAKE_BUILD_TYPE=Debug -DLLAMA_SANITIZE_${{ matrix.sanitizer }}=ON
-#
-#      - name: Build
-#        run: |
-#          make
-#
-#  windows:
-#    runs-on: windows-latest
-#
-#    strategy:
-#      matrix:
-#        build: [Release]
-#        arch: [Win32, x64]
-#        include:
-#          - arch: Win32
-#            s2arc: x86
-#          - arch: x64
-#            s2arc: x64
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: Add msbuild to PATH
-#        uses: microsoft/setup-msbuild@v1
-#
-#      - name: Configure
-#        run: >
-#          cmake -S . -B ./build -A ${{ matrix.arch }}
-#          -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-#
-#      - name: Build
-#        run: |
-#          cd ./build
-#          msbuild ALL_BUILD.vcxproj -t:build -p:configuration=${{ matrix.build }} -p:platform=${{ matrix.arch }}
-#
-#      - name: Upload binaries
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: llama-bin-${{ matrix.arch }}
-#          path: build/bin/${{ matrix.build }}
-#
-#  windows-blas:
-#    runs-on: windows-latest
-#
-#    strategy:
-#      matrix:
-#        build: [Release]
-#        arch: [Win32, x64]
-#        blas: [ON]
-#        include:
-#          - arch: Win32
-#            obzip: https://github.com/xianyi/OpenBLAS/releases/download/v0.3.21/OpenBLAS-0.3.21-x86.zip
-#            s2arc: x86
-#          - arch: x64
-#            obzip: https://github.com/xianyi/OpenBLAS/releases/download/v0.3.21/OpenBLAS-0.3.21-x64.zip
-#            s2arc: x64
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: Add msbuild to PATH
-#        uses: microsoft/setup-msbuild@v1
-#
-#      - name: Fetch OpenBLAS
-#        if: matrix.blas == 'ON'
-#        run: |
-#          C:/msys64/usr/bin/wget.exe -qO blas.zip ${{ matrix.obzip }}
-#          7z x blas.zip -oblas -y
-#          copy blas/include/cblas.h .
-#          copy blas/include/openblas_config.h .
-#          echo "blasdir=$env:GITHUB_WORKSPACE/blas" >> $env:GITHUB_ENV
-#
-#      - name: Configure
-#        run: >
-#          cmake -S . -B ./build -A ${{ matrix.arch }}
-#          -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-#          -DLLAMA_SUPPORT_OPENBLAS=${{ matrix.blas }}
-#          -DCMAKE_LIBRARY_PATH="$env:blasdir/lib"
-#
-#      - name: Build
-#        run: |
-#          cd ./build
-#          msbuild ALL_BUILD.vcxproj -t:build -p:configuration=${{ matrix.build }} -p:platform=${{ matrix.arch }}
-#
-#      - name: Copy libopenblas.dll
-#        if: matrix.blas == 'ON'
-#        run: copy "$env:blasdir/bin/libopenblas.dll" build/bin/${{ matrix.build }}
-#
-#      - name: Upload binaries
-#        if: matrix.blas == 'ON'
-#        uses: actions/upload-artifact@v4
-#        with:
-#          name: llama-blas-bin-${{ matrix.arch }}
-#          path: build/bin/${{ matrix.build }}
-#
-#  emscripten:
-#    runs-on: ubuntu-latest
-#
-#    strategy:
-#      matrix:
-#        build: [Release]
-#
-#    steps:
-#      - name: Clone
-#        uses: actions/checkout@v4
-#
-#      - name: Dependencies
-#        run: |
-#          wget -q https://github.com/emscripten-core/emsdk/archive/master.tar.gz
-#          tar -xvf master.tar.gz
-#          emsdk-master/emsdk update
-#          emsdk-master/emsdk install latest
-#          emsdk-master/emsdk activate latest
-#
-#      - name: Configure
-#        run: echo "tmp"
-#
-#      - name: Build
-#        run: |
-#          pushd emsdk-master
-#          source ./emsdk_env.sh
-#          popd
-#          emcmake cmake . -DCMAKE_BUILD_TYPE=${{ matrix.build }}
-#          make

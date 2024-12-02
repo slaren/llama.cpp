@@ -43,6 +43,8 @@
 #include <windows.h>
 #include <fcntl.h>
 #include <io.h>
+#include <sys/types.h>
+#include <sys/stat.h>
 #else
 #include <sys/ioctl.h>
 #include <sys/stat.h>
@@ -1168,8 +1170,13 @@ static bool common_download_file(const std::string & url, const std::string & pa
 #endif
 
     // Check if the file already exists locally
+#ifdef _WIN32
+    struct _stati64 model_file_info;
+    auto file_exists = (_stati64(path.c_str(), &model_file_info) == 0);
+#else
     struct stat model_file_info;
     auto file_exists = (stat(path.c_str(), &model_file_info) == 0);
+#endif
 
     // If the file exists, check its JSON metadata companion file.
     std::string metadata_path = path + ".json";
