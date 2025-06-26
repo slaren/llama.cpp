@@ -355,7 +355,7 @@ struct test_result {
     bool passed;
     std::string error_message;
     double time_us;
-    double flops_per_sec;
+    double flops;
     double bandwidth_gb_s;
     size_t memory_kb;
     int n_runs;
@@ -363,7 +363,7 @@ struct test_result {
     test_result() {
         // Initialize with default values
         time_us = 0.0;
-        flops_per_sec = 0.0;
+        flops = 0.0;
         bandwidth_gb_s = 0.0;
         memory_kb = 0;
         n_runs = 0;
@@ -377,10 +377,24 @@ struct test_result {
         test_time = buf;
     }
 
+    test_result(const std::string& backend_name, const std::string& op_name, const std::string& op_params,
+                const std::string& test_mode, bool supported, bool passed, const std::string& error_message = "",
+                double time_us = 0.0, double flops = 0.0, double bandwidth_gb_s = 0.0,
+                size_t memory_kb = 0, int n_runs = 0)
+        : backend_name(backend_name), op_name(op_name), op_params(op_params), test_mode(test_mode),
+          supported(supported), passed(passed), error_message(error_message), time_us(time_us),
+          flops(flops), bandwidth_gb_s(bandwidth_gb_s), memory_kb(memory_kb), n_runs(n_runs) {
+        // Set test time
+        time_t t = time(NULL);
+        char buf[32];
+        std::strftime(buf, sizeof(buf), "%FT%TZ", gmtime(&t));
+        test_time = buf;
+    }
+
     static const std::vector<std::string> & get_fields() {
         static const std::vector<std::string> fields = {
             "test_time", "backend_name", "op_name", "op_params", "test_mode",
-            "supported", "passed", "error_message", "time_us", "flops_per_sec",
+            "supported", "passed", "error_message", "time_us", "flops",
             "bandwidth_gb_s", "memory_kb", "n_runs"
         };
         return fields;
@@ -395,7 +409,7 @@ struct test_result {
         if (field == "memory_kb" || field == "n_runs") {
             return INT;
         }
-        if (field == "time_us" || field == "flops_per_sec" || field == "bandwidth_gb_s") {
+        if (field == "time_us" || field == "flops" || field == "bandwidth_gb_s") {
             return FLOAT;
         }
         return STRING;
@@ -412,7 +426,7 @@ struct test_result {
             std::to_string(passed),
             error_message,
             std::to_string(time_us),
-            std::to_string(flops_per_sec),
+            std::to_string(flops),
             std::to_string(bandwidth_gb_s),
             std::to_string(memory_kb),
             std::to_string(n_runs)
@@ -521,7 +535,7 @@ private:
             result.n_runs,
             result.time_us);
 
-        if (result.flops_per_sec > 0) {
+        if (result.flops > 0) {
             auto format_flops = [](double flops) -> std::string {
                 char buf[256];
                 if (flops >= 1e12) {
@@ -531,14 +545,14 @@ private:
                 } else if (flops >= 1e6) {
                     snprintf(buf, sizeof(buf), "%6.2f MFLOP", flops / 1e6);
                 } else {
-                    snprintf(buf, sizeof(buf), "%6.2f KFLOP", flops / 1e3);
+                    snprintf(buf, sizeof(buf), "%6.2f kFLOP", flops / 1e3);
                 }
                 return buf;
             };
-            uint64_t op_flops_per_run = result.flops_per_sec * result.time_us / 1e6;
+            uint64_t op_flops_per_run = result.flops * result.time_us / 1e6;
             printf("%s/run - \033[1;34m%sS\033[0m",
                 format_flops(op_flops_per_run).c_str(),
-                format_flops(result.flops_per_sec).c_str());
+                format_flops(result.flops).c_str());
         } else {
             printf("%8zu kB/run - \033[1;34m%7.2f GB/s\033[0m",
                 result.memory_kb,
@@ -565,7 +579,7 @@ struct sql_printer : public printer {
 
     void print_header() override {
         std::vector<std::string> fields = test_result::get_fields();
-        fprintf(fout, "CREATE TABLE IF NOT EXISTS test_results (\n");
+        fprintf(fout, "CREATE TABLE IF NOT EXISTS test_backend_ops (\n");
         for (size_t i = 0; i < fields.size(); i++) {
             fprintf(fout, "  %s %s%s\n", fields[i].c_str(), get_sql_field_type(fields[i]).c_str(),
                     i < fields.size() - 1 ? "," : "");
@@ -574,7 +588,7 @@ struct sql_printer : public printer {
     }
 
     void print_test_result(const test_result & result) override {
-        fprintf(fout, "INSERT INTO test_results (");
+        fprintf(fout, "INSERT INTO test_backend_ops (");
         std::vector<std::string> fields = test_result::get_fields();
         for (size_t i = 0; i < fields.size(); i++) {
             fprintf(fout, "%s%s", fields[i].c_str(), i < fields.size() - 1 ? ", " : "");
@@ -602,21 +616,17 @@ struct sql_printer : public printer {
     }
 
     void print_device_info(const char * format, ...) override {
-        // Do nothing - SQL format only outputs test results
         (void)format;
     }
 
     void print_test_summary(const char * format, ...) override {
-        // Do nothing - SQL format only outputs test results
         (void)format;
     }
 
     void print_status_ok() override {
-        // Do nothing - SQL format only outputs test results
     }
 
     void print_status_fail() override {
-        // Do nothing - SQL format only outputs test results
     }
 };
 
@@ -784,19 +794,8 @@ struct test_case {
 
         if (!supported) {
             // Create test result for unsupported operation
-            test_result result;
-            result.backend_name = ggml_backend_name(backend1);
-            result.op_name = current_op_name;
-            result.op_params = vars();
-            result.test_mode = "test";
-            result.supported = false;
-            result.passed = false;
-            result.error_message = "not supported";
-            result.time_us = 0.0;
-            result.flops_per_sec = 0.0;
-            result.bandwidth_gb_s = 0.0;
-            result.memory_kb = 0;
-            result.n_runs = 0;
+            test_result result(ggml_backend_name(backend1), current_op_name, vars(), "test",
+                             false, false, "not supported");
 
             if (output_printer) {
                 output_printer->print_test_result(result);
@@ -912,19 +911,9 @@ struct test_case {
 
         // Create test result
         bool test_passed = ud.ok && cmp_ok;
-        test_result result;
-        result.backend_name = ggml_backend_name(backend1);
-        result.op_name = current_op_name;
-        result.op_params = vars();
-        result.test_mode = "test";
-        result.supported = supported;
-        result.passed = test_passed;
-        result.error_message = test_passed ? "" : (!cmp_ok ? "compare failed" : "test failed");
-        result.time_us = 0.0; // Not measured in test mode
-        result.flops_per_sec = 0.0;
-        result.bandwidth_gb_s = 0.0;
-        result.memory_kb = 0;
-        result.n_runs = 0;
+        std::string error_msg = test_passed ? "" : (!cmp_ok ? "compare failed" : "test failed");
+        test_result result(ggml_backend_name(backend1), current_op_name, vars(), "test",
+                         supported, test_passed, error_msg);
 
         if (output_printer) {
             output_printer->print_test_result(result);
@@ -956,19 +945,8 @@ struct test_case {
         // check if backends support op
         if (!ggml_backend_supports_op(backend, out)) {
             // Create test result for unsupported performance test
-            test_result result;
-            result.backend_name = ggml_backend_name(backend);
-            result.op_name = current_op_name;
-            result.op_params = vars();
-            result.test_mode = "perf";
-            result.supported = false;
-            result.passed = false;
-            result.error_message = "not supported";
-            result.time_us = 0.0;
-            result.flops_per_sec = 0.0;
-            result.bandwidth_gb_s = 0.0;
-            result.memory_kb = 0;
-            result.n_runs = 0;
+            test_result result(ggml_backend_name(backend), current_op_name, vars(), "perf",
+                             false, false, "not supported");
 
             if (output_printer) {
                 output_printer->print_test_result(result);
@@ -1061,19 +1039,14 @@ struct test_case {
         } while (total_time_us < 1000*1000); // run for at least 1 second
 
         // Create test result
-        test_result result;
-        result.backend_name = ggml_backend_name(backend);
-        result.op_name = current_op_name;
-        result.op_params = vars();
-        result.test_mode = "perf";
-        result.supported = true; // If we got this far, it's supported
-        result.passed = true; // Performance tests don't fail
-        result.error_message = "";
-        result.time_us = (double)total_time_us / total_runs;
-        result.flops_per_sec = (op_flops(out) > 0) ? (op_flops(out) * total_runs) / (total_time_us / 1e6) : 0.0;
-        result.bandwidth_gb_s = (op_flops(out) == 0) ? total_mem / (total_time_us / 1e6) / 1024.0 / 1024.0 / 1024.0 : 0.0;
-        result.memory_kb = op_size(out) / 1024;
-        result.n_runs = total_runs;
+        double avg_time_us = (double)total_time_us / total_runs;
+        double calculated_flops = (op_flops(out) > 0) ? (op_flops(out) * total_runs) / (total_time_us / 1e6) : 0.0;
+        double calculated_bandwidth = (op_flops(out) == 0) ? total_mem / (total_time_us / 1e6) / 1024.0 / 1024.0 / 1024.0 : 0.0;
+        size_t calculated_memory_kb = op_size(out) / 1024;
+
+        test_result result(ggml_backend_name(backend), current_op_name, vars(), "perf",
+                         true, true, "", avg_time_us, calculated_flops, calculated_bandwidth,
+                         calculated_memory_kb, total_runs);
 
         if (output_printer) {
             output_printer->print_test_result(result);
