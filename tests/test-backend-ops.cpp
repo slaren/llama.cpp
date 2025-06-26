@@ -38,6 +38,10 @@
 #include <thread>
 #include <vector>
 
+// External declarations for build info
+extern int LLAMA_BUILD_NUMBER;
+extern const char *LLAMA_COMMIT;
+
 static void init_tensor_uniform(ggml_tensor * tensor, float min = -1.0f, float max = 1.0f) {
     size_t nels = ggml_nelements(tensor);
     std::vector<float> data(nels);
@@ -347,6 +351,8 @@ static bool output_format_from_str(const std::string & s, output_formats & forma
 // Test result structure for SQL output
 struct test_result {
     std::string test_time;
+    std::string build_commit;
+    int build_number;
     std::string backend_name;
     std::string op_name;
     std::string op_params;
@@ -375,6 +381,10 @@ struct test_result {
         char buf[32];
         std::strftime(buf, sizeof(buf), "%FT%TZ", gmtime(&t));
         test_time = buf;
+
+        // Set build info
+        build_commit = LLAMA_COMMIT;
+        build_number = LLAMA_BUILD_NUMBER;
     }
 
     test_result(const std::string& backend_name, const std::string& op_name, const std::string& op_params,
@@ -389,11 +399,15 @@ struct test_result {
         char buf[32];
         std::strftime(buf, sizeof(buf), "%FT%TZ", gmtime(&t));
         test_time = buf;
+
+        // Set build info
+        build_commit = LLAMA_COMMIT;
+        build_number = LLAMA_BUILD_NUMBER;
     }
 
     static const std::vector<std::string> & get_fields() {
         static const std::vector<std::string> fields = {
-            "test_time", "backend_name", "op_name", "op_params", "test_mode",
+            "test_time", "build_commit", "build_number", "backend_name", "op_name", "op_params", "test_mode",
             "supported", "passed", "error_message", "time_us", "flops",
             "bandwidth_gb_s", "memory_kb", "n_runs"
         };
@@ -406,7 +420,7 @@ struct test_result {
         if (field == "supported" || field == "passed") {
             return BOOL;
         }
-        if (field == "memory_kb" || field == "n_runs") {
+        if (field == "memory_kb" || field == "n_runs" || field == "build_number") {
             return INT;
         }
         if (field == "time_us" || field == "flops" || field == "bandwidth_gb_s") {
@@ -418,6 +432,8 @@ struct test_result {
     std::vector<std::string> get_values() const {
         return {
             test_time,
+            build_commit,
+            std::to_string(build_number),
             backend_name,
             op_name,
             op_params,
