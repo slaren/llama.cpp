@@ -451,20 +451,20 @@ struct test_result {
 };
 
 // Printer classes for different output formats
+enum class message_type {
+    INFO,
+    ERROR,
+    STATUS_OK,
+    STATUS_FAIL
+};
+
 struct printer {
     virtual ~printer() {}
     FILE * fout = stdout;
     virtual void print_header() {}
     virtual void print_test_result(const test_result & result) = 0;
     virtual void print_footer() {}
-
-    // General purpose output methods
-    virtual void print_info(const char * format, ...) = 0;
-    virtual void print_error(const char * format, ...) = 0;
-    virtual void print_device_info(const char * format, ...) = 0;
-    virtual void print_test_summary(const char * format, ...) = 0;
-    virtual void print_status_ok() = 0;
-    virtual void print_status_fail() = 0;
+    virtual void print_message(message_type type, const char * format, ...) = 0;
 };
 
 struct console_printer : public printer {
@@ -476,40 +476,26 @@ struct console_printer : public printer {
         }
     }
 
-    void print_info(const char * format, ...) override {
+    void print_message(message_type type, const char * format, ...) override {
         va_list args;
         va_start(args, format);
-        vprintf(format, args);
+
+        switch (type) {
+            case message_type::INFO:
+                vprintf(format, args);
+                break;
+            case message_type::ERROR:
+                vfprintf(stderr, format, args);
+                break;
+            case message_type::STATUS_OK:
+                printf("\033[1;32mOK\033[0m\n");
+                break;
+            case message_type::STATUS_FAIL:
+                printf("\033[1;31mFAIL\033[0m\n");
+                break;
+        }
+
         va_end(args);
-    }
-
-    void print_error(const char * format, ...) override {
-        va_list args;
-        va_start(args, format);
-        vfprintf(stderr, format, args);
-        va_end(args);
-    }
-
-    void print_device_info(const char * format, ...) override {
-        va_list args;
-        va_start(args, format);
-        vprintf(format, args);
-        va_end(args);
-    }
-
-    void print_test_summary(const char * format, ...) override {
-        va_list args;
-        va_start(args, format);
-        vprintf(format, args);
-        va_end(args);
-    }
-
-    void print_status_ok() override {
-        printf("\033[1;32mOK\033[0m\n");
-    }
-
-    void print_status_fail() override {
-        printf("\033[1;31mFAIL\033[0m\n");
     }
 
 private:
@@ -617,32 +603,16 @@ struct sql_printer : public printer {
         fprintf(fout, ");\n");
     }
 
-    // SQL printer ignores general output - only outputs test results
-    void print_info(const char * format, ...) override {
-        // Do nothing - SQL format only outputs test results
-        (void)format;
-    }
-
-    void print_error(const char * format, ...) override {
-        // Still output errors to stderr for SQL format
-        va_list args;
-        va_start(args, format);
-        vfprintf(stderr, format, args);
-        va_end(args);
-    }
-
-    void print_device_info(const char * format, ...) override {
-        (void)format;
-    }
-
-    void print_test_summary(const char * format, ...) override {
-        (void)format;
-    }
-
-    void print_status_ok() override {
-    }
-
-    void print_status_fail() override {
+    // SQL printer ignores most output types - only outputs test results and errors
+    void print_message(message_type type, const char * format, ...) override {
+        if (type == message_type::ERROR) {
+            // Still output errors to stderr for SQL format
+            va_list args;
+            va_start(args, format);
+            vfprintf(stderr, format, args);
+            va_end(args);
+        }
+        // All other message types are ignored in SQL format
     }
 };
 
@@ -1089,14 +1059,14 @@ struct test_case {
         ggml_tensor * out = build_graph(ctx.get());
 
         if ((op_name != nullptr && op_desc(out) != op_name) || out->op == GGML_OP_OPT_STEP_ADAMW) {
-            //output_printer->print_info("  %s: skipping\n", op_desc(out).c_str());
+            //output_printer->print_message(message_type::INFO, "  %s: skipping\n", op_desc(out).c_str());
             return true;
         }
 
-        output_printer->print_info("  %s(%s): ", op_desc(out).c_str(), vars().c_str());
+        output_printer->print_message(message_type::INFO, "  %s(%s): ", op_desc(out).c_str(), vars().c_str());
 
         if (out->type != GGML_TYPE_F32) {
-            output_printer->print_info("not supported [%s->type != FP32]\n", out->name);
+            output_printer->print_message(message_type::INFO, "not supported [%s->type != FP32]\n", out->name);
             return true;
         }
 
@@ -1105,25 +1075,25 @@ struct test_case {
         bool any_params = false;
         for (ggml_tensor * t = ggml_get_first_tensor(ctx.get()); t != NULL; t = ggml_get_next_tensor(ctx.get(), t)) {
             if (!ggml_backend_supports_op(backend, t)) {
-                output_printer->print_info("not supported [%s] ", ggml_backend_name(backend));
+                output_printer->print_message(message_type::INFO, "not supported [%s] ", ggml_backend_name(backend));
                 supported = false;
                 break;
             }
             if ((t->flags & GGML_TENSOR_FLAG_PARAM)) {
                 any_params = true;
                 if (t->type != GGML_TYPE_F32) {
-                    output_printer->print_info("not supported [%s->type != FP32] ", t->name);
+                    output_printer->print_message(message_type::INFO, "not supported [%s->type != FP32] ", t->name);
                     supported = false;
                     break;
                 }
             }
         }
         if (!any_params) {
-            output_printer->print_info("not supported [%s] \n", op_desc(out).c_str());
+            output_printer->print_message(message_type::INFO, "not supported [%s] \n", op_desc(out).c_str());
             supported = false;
         }
         if (!supported) {
-            output_printer->print_info("\n");
+            output_printer->print_message(message_type::INFO, "\n");
             return true;
         }
 
@@ -1134,7 +1104,7 @@ struct test_case {
             }
         }
         if (ngrads > grad_nmax()) {
-            output_printer->print_info("skipping large tensors for speed \n");
+            output_printer->print_message(message_type::INFO, "skipping large tensors for speed \n");
             return true;
         }
 
@@ -1157,25 +1127,25 @@ struct test_case {
 
         for (ggml_tensor * t = ggml_get_first_tensor(ctx.get()); t != NULL; t = ggml_get_next_tensor(ctx.get(), t)) {
             if (!ggml_backend_supports_op(backend, t)) {
-                output_printer->print_info("not supported [%s] ", ggml_backend_name(backend));
+                output_printer->print_message(message_type::INFO, "not supported [%s] ", ggml_backend_name(backend));
                 supported = false;
                 break;
             }
             if ((t->flags & GGML_TENSOR_FLAG_PARAM) && t->type != GGML_TYPE_F32) {
-                output_printer->print_info("not supported [%s->type != FP32] ", t->name);
+                output_printer->print_message(message_type::INFO, "not supported [%s->type != FP32] ", t->name);
                 supported = false;
                 break;
             }
         }
         if (!supported) {
-            output_printer->print_info("\n");
+            output_printer->print_message(message_type::INFO, "\n");
             return true;
         }
 
         // allocate
         ggml_backend_buffer_ptr buf(ggml_backend_alloc_ctx_tensors(ctx.get(), backend)); // smart ptr
         if (buf == NULL) {
-            output_printer->print_error("failed to allocate tensors [%s] ", ggml_backend_name(backend));
+            output_printer->print_message(message_type::ERROR, "failed to allocate tensors [%s] ", ggml_backend_name(backend));
             return false;
         }
 
@@ -1213,7 +1183,7 @@ struct test_case {
             for (int64_t i = 0; i < ne; ++i) { // gradient algebraic
                 // check for nans
                 if (!std::isfinite(ga[i])) {
-                    output_printer->print_info("[%s] nonfinite gradient at index %" PRId64 " (%s=%f) ", ggml_op_desc(t), i, bn, ga[i]);
+                    output_printer->print_message(message_type::INFO, "[%s] nonfinite gradient at index %" PRId64 " (%s=%f) ", ggml_op_desc(t), i, bn, ga[i]);
                     ok = false;
                     break;
                 }
@@ -1281,7 +1251,7 @@ struct test_case {
 
             const double err = mean_abs_asymm(gn.data(), ga.data(), gn.size(), expect);
             if (err > max_maa_err()) {
-                output_printer->print_info("[%s] MAA = %.9f > %.9f ", ggml_op_desc(t), err, max_maa_err());
+                output_printer->print_message(message_type::INFO, "[%s] MAA = %.9f > %.9f ", ggml_op_desc(t), err, max_maa_err());
                 ok = false;
                 break;
             }
@@ -1291,15 +1261,15 @@ struct test_case {
         }
 
         if (!ok) {
-            output_printer->print_info("compare failed ");
+            output_printer->print_message(message_type::INFO, "compare failed ");
         }
 
         if (ok) {
-            output_printer->print_status_ok();
+            output_printer->print_message(message_type::STATUS_OK, "");
             return true;
         }
 
-        output_printer->print_status_fail();
+        output_printer->print_message(message_type::STATUS_FAIL, "");
         return false;
     }
 };
@@ -5330,7 +5300,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
         filter_test_cases(test_cases, params_filter);
         ggml_backend_t backend_cpu = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, NULL);
         if (backend_cpu == NULL) {
-            output_printer->print_error("  Failed to initialize CPU backend\n");
+            output_printer->print_message(message_type::ERROR, "  Failed to initialize CPU backend\n");
             return false;
         }
 
@@ -5340,7 +5310,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
                 n_ok++;
             }
         }
-        output_printer->print_test_summary("  %zu/%zu tests passed\n", n_ok, test_cases.size());
+        output_printer->print_message(message_type::INFO, "  %zu/%zu tests passed\n", n_ok, test_cases.size());
 
         ggml_backend_free(backend_cpu);
 
@@ -5356,7 +5326,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
                 n_ok++;
             }
         }
-        output_printer->print_test_summary("  %zu/%zu tests passed\n", n_ok, test_cases.size());
+        output_printer->print_message(message_type::INFO, "  %zu/%zu tests passed\n", n_ok, test_cases.size());
 
         return n_ok == test_cases.size();
     }
@@ -5443,23 +5413,23 @@ int main(int argc, char ** argv) {
         output_printer->print_header();
     }
 
-    output_printer->print_info("Testing %zu devices\n\n", ggml_backend_dev_count());
+    output_printer->print_message(message_type::INFO, "Testing %zu devices\n\n", ggml_backend_dev_count());
 
     size_t n_ok = 0;
 
     for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
 
-        output_printer->print_device_info("Backend %zu/%zu: %s\n", i + 1, ggml_backend_dev_count(), ggml_backend_dev_name(dev));
+        output_printer->print_message(message_type::INFO, "Backend %zu/%zu: %s\n", i + 1, ggml_backend_dev_count(), ggml_backend_dev_name(dev));
 
         if (backend_filter != NULL && strcmp(backend_filter, ggml_backend_dev_name(dev)) != 0) {
-            output_printer->print_device_info("  Skipping\n");
+            output_printer->print_message(message_type::INFO, "  Skipping\n");
             n_ok++;
             continue;
         }
 
         if (backend_filter == NULL && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU && mode != MODE_GRAD) {
-            output_printer->print_device_info("  Skipping CPU backend\n");
+            output_printer->print_message(message_type::INFO, "  Skipping CPU backend\n");
             n_ok++;
             continue;
         }
@@ -5474,23 +5444,23 @@ int main(int argc, char ** argv) {
             ggml_backend_set_n_threads_fn(backend, std::thread::hardware_concurrency());
         }
 
-        output_printer->print_device_info("  Device description: %s\n", ggml_backend_dev_description(dev));
+        output_printer->print_message(message_type::INFO, "  Device description: %s\n", ggml_backend_dev_description(dev));
         size_t free, total; // NOLINT
         ggml_backend_dev_memory(dev, &free, &total);
-        output_printer->print_device_info("  Device memory: %zu MB (%zu MB free)\n", total / 1024 / 1024, free / 1024 / 1024);
-        output_printer->print_device_info("\n");
+        output_printer->print_message(message_type::INFO, "  Device memory: %zu MB (%zu MB free)\n", total / 1024 / 1024, free / 1024 / 1024);
+        output_printer->print_message(message_type::INFO, "\n");
 
         bool ok = test_backend(backend, mode, op_name_filter, params_filter, output_printer.get());
 
-        output_printer->print_device_info("  Backend %s: ", ggml_backend_name(backend));
+        output_printer->print_message(message_type::INFO, "  Backend %s: ", ggml_backend_name(backend));
         if (ok) {
-            output_printer->print_status_ok();
+            output_printer->print_message(message_type::STATUS_OK, "");
             n_ok++;
         } else {
-            output_printer->print_status_fail();
+            output_printer->print_message(message_type::STATUS_FAIL, "");
         }
 
-        output_printer->print_device_info("\n");
+        output_printer->print_message(message_type::INFO, "\n");
 
         ggml_backend_free(backend);
     }
@@ -5501,13 +5471,13 @@ int main(int argc, char ** argv) {
         output_printer->print_footer();
     }
 
-    output_printer->print_test_summary("%zu/%zu backends passed\n", n_ok, ggml_backend_dev_count());
+    output_printer->print_message(message_type::INFO, "%zu/%zu backends passed\n", n_ok, ggml_backend_dev_count());
 
     if (n_ok != ggml_backend_dev_count()) {
-        output_printer->print_status_fail();
+        output_printer->print_message(message_type::STATUS_FAIL, "");
         return 1;
     }
 
-    output_printer->print_status_ok();
+    output_printer->print_message(message_type::STATUS_OK, "");
     return 0;
 }
