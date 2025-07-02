@@ -451,11 +451,137 @@ struct test_result {
 };
 
 // Printer classes for different output formats
-enum class message_type {
-    INFO,
-    ERROR,
-    STATUS_OK,
-    STATUS_FAIL
+struct test_operation_info {
+    std::string op_name;
+    std::string op_params;
+    std::string backend_name;
+    bool supported = true;
+    std::string failure_reason;
+
+    test_operation_info() = default;
+    test_operation_info(const std::string& op_name, const std::string& op_params, const std::string& backend_name, bool supported = true, const std::string& failure_reason = "")
+        : op_name(op_name), op_params(op_params), backend_name(backend_name), supported(supported), failure_reason(failure_reason) {}
+};
+
+struct device_info {
+    size_t device_index;
+    size_t total_devices;
+    std::string device_name;
+    std::string description;
+    size_t memory_total_mb;
+    size_t memory_free_mb;
+    bool skipped = false;
+    std::string skip_reason;
+
+    device_info() = default;
+    device_info(size_t device_index, size_t total_devices, const std::string& device_name, const std::string& description = "",
+                size_t memory_total_mb = 0, size_t memory_free_mb = 0, bool skipped = false, const std::string& skip_reason = "")
+        : device_index(device_index), total_devices(total_devices), device_name(device_name), description(description),
+          memory_total_mb(memory_total_mb), memory_free_mb(memory_free_mb), skipped(skipped), skip_reason(skip_reason) {}
+};
+
+struct test_summary_info {
+    size_t tests_passed;
+    size_t tests_total;
+    bool is_backend_summary = false; // true for backend summary, false for test summary
+
+    test_summary_info() = default;
+    test_summary_info(size_t tests_passed, size_t tests_total, bool is_backend_summary = false)
+        : tests_passed(tests_passed), tests_total(tests_total), is_backend_summary(is_backend_summary) {}
+};
+
+struct error_info {
+    std::string component; // e.g., "backend", "allocation", "gradient"
+    std::string details;
+    std::string backend_name;
+
+    error_info() = default;
+    error_info(const std::string& component, const std::string& details, const std::string& backend_name = "")
+        : component(component), details(details), backend_name(backend_name) {}
+};
+
+struct test_status_info {
+    bool passed;
+    std::string details; // optional additional info
+
+    test_status_info() = default;
+    test_status_info(bool passed, const std::string& details = "")
+        : passed(passed), details(details) {}
+};
+
+struct testing_start_info {
+    size_t device_count;
+
+    testing_start_info() = default;
+    testing_start_info(size_t device_count) : device_count(device_count) {}
+};
+
+struct backend_init_info {
+    size_t device_index;
+    size_t total_devices;
+    std::string device_name;
+    bool skipped = false;
+    std::string skip_reason;
+    std::string description;
+    size_t memory_total_mb = 0;
+    size_t memory_free_mb = 0;
+    bool has_memory_info = false;
+
+    backend_init_info() = default;
+    backend_init_info(size_t device_index, size_t total_devices, const std::string& device_name, bool skipped = false,
+                      const std::string& skip_reason = "", const std::string& description = "",
+                      size_t memory_total_mb = 0, size_t memory_free_mb = 0, bool has_memory_info = false)
+        : device_index(device_index), total_devices(total_devices), device_name(device_name), skipped(skipped),
+          skip_reason(skip_reason), description(description), memory_total_mb(memory_total_mb),
+          memory_free_mb(memory_free_mb), has_memory_info(has_memory_info) {}
+};
+
+struct backend_status_info {
+    std::string backend_name;
+    bool passed;
+
+    backend_status_info() = default;
+    backend_status_info(const std::string& backend_name, bool passed)
+        : backend_name(backend_name), passed(passed) {}
+};
+
+struct overall_summary_info {
+    size_t backends_passed;
+    size_t backends_total;
+    bool all_passed;
+
+    overall_summary_info() = default;
+    overall_summary_info(size_t backends_passed, size_t backends_total, bool all_passed)
+        : backends_passed(backends_passed), backends_total(backends_total), all_passed(all_passed) {}
+};
+
+struct gradient_info {
+    std::string op_desc;
+    int64_t index;
+    std::string param_name;
+    float value;
+
+    gradient_info() = default;
+    gradient_info(const std::string& op_desc, int64_t index, const std::string& param_name, float value)
+        : op_desc(op_desc), index(index), param_name(param_name), value(value) {}
+};
+
+struct maa_error_info {
+    std::string op_desc;
+    double error;
+    double threshold;
+
+    maa_error_info() = default;
+    maa_error_info(const std::string& op_desc, double error, double threshold)
+        : op_desc(op_desc), error(error), threshold(threshold) {}
+};
+
+struct compare_failure_info {
+    // Empty for now - just indicates compare failure
+};
+
+struct large_tensor_skip_info {
+    // Empty for now - just indicates large tensor skip
 };
 
 struct printer {
@@ -464,7 +590,14 @@ struct printer {
     virtual void print_header() {}
     virtual void print_test_result(const test_result & result) = 0;
     virtual void print_footer() {}
-    virtual void print_message(message_type type, const char * format, ...) = 0;
+
+    template<typename T>
+    void print_message(const T& data) {
+        print_message_impl(&data, typeid(T).name());
+    }
+
+protected:
+    virtual void print_message_impl(const void* data, const char* type_name) = 0;
 };
 
 struct console_printer : public printer {
@@ -476,29 +609,161 @@ struct console_printer : public printer {
         }
     }
 
-    void print_message(message_type type, const char * format, ...) override {
-        va_list args;
-        va_start(args, format);
+protected:
+    void print_message_impl(const void* data, const char* type_name) override {
+        std::string type_str(type_name);
 
-        switch (type) {
-            case message_type::INFO:
-                vprintf(format, args);
-                break;
-            case message_type::ERROR:
-                vfprintf(stderr, format, args);
-                break;
-            case message_type::STATUS_OK:
-                printf("\033[1;32mOK\033[0m\n");
-                break;
-            case message_type::STATUS_FAIL:
-                printf("\033[1;31mFAIL\033[0m\n");
-                break;
+        if (type_str.find("test_operation_info") != std::string::npos) {
+            handle_message(*static_cast<const test_operation_info*>(data));
+        } else if (type_str.find("device_info") != std::string::npos) {
+            handle_message(*static_cast<const device_info*>(data));
+        } else if (type_str.find("test_summary_info") != std::string::npos) {
+            handle_message(*static_cast<const test_summary_info*>(data));
+        } else if (type_str.find("error_info") != std::string::npos) {
+            handle_message(*static_cast<const error_info*>(data));
+        } else if (type_str.find("test_status_info") != std::string::npos) {
+            handle_message(*static_cast<const test_status_info*>(data));
+        } else if (type_str.find("testing_start_info") != std::string::npos) {
+            handle_message(*static_cast<const testing_start_info*>(data));
+        } else if (type_str.find("backend_init_info") != std::string::npos) {
+            handle_message(*static_cast<const backend_init_info*>(data));
+        } else if (type_str.find("backend_status_info") != std::string::npos) {
+            handle_message(*static_cast<const backend_status_info*>(data));
+        } else if (type_str.find("overall_summary_info") != std::string::npos) {
+            handle_message(*static_cast<const overall_summary_info*>(data));
+        } else if (type_str.find("gradient_info") != std::string::npos) {
+            handle_message(*static_cast<const gradient_info*>(data));
+        } else if (type_str.find("maa_error_info") != std::string::npos) {
+            handle_message(*static_cast<const maa_error_info*>(data));
+        } else if (type_str.find("compare_failure_info") != std::string::npos) {
+            handle_message(*static_cast<const compare_failure_info*>(data));
+        } else if (type_str.find("large_tensor_skip_info") != std::string::npos) {
+            handle_message(*static_cast<const large_tensor_skip_info*>(data));
         }
-
-        va_end(args);
     }
 
 private:
+    void handle_message(const test_operation_info& info) {
+        printf("  %s(%s): ", info.op_name.c_str(), info.op_params.c_str());
+        fflush(stdout);
+
+        if (!info.supported) {
+            if (!info.failure_reason.empty()) {
+                printf("not supported [%s]\n", info.failure_reason.c_str());
+            } else {
+                printf("not supported [%s]\n", info.backend_name.c_str());
+            }
+        }
+    }
+
+    void handle_message(const device_info& info) {
+        if (info.device_index == 0) {
+            // This is the first device, don't print the header info here
+        }
+
+        printf("Backend %zu/%zu: %s\n", info.device_index + 1, info.total_devices, info.device_name.c_str());
+
+        if (info.skipped) {
+            printf("  %s\n", info.skip_reason.c_str());
+            return;
+        }
+
+        if (!info.description.empty()) {
+            printf("  Device description: %s\n", info.description.c_str());
+        }
+
+        if (info.memory_total_mb > 0) {
+            printf("  Device memory: %zu MB (%zu MB free)\n", info.memory_total_mb, info.memory_free_mb);
+        }
+
+        printf("\n");
+    }
+
+    void handle_message(const test_summary_info& info) {
+        if (info.is_backend_summary) {
+            printf("%zu/%zu backends passed\n", info.tests_passed, info.tests_total);
+        } else {
+            printf("  %zu/%zu tests passed\n", info.tests_passed, info.tests_total);
+        }
+    }
+
+    void handle_message(const error_info& info) {
+        if (info.component == "allocation") {
+            fprintf(stderr, "failed to allocate tensors [%s] ", info.backend_name.c_str());
+        } else if (info.component == "backend") {
+            fprintf(stderr, "  Failed to initialize %s backend\n", info.backend_name.c_str());
+        } else {
+            fprintf(stderr, "Error in %s: %s\n", info.component.c_str(), info.details.c_str());
+        }
+    }
+
+    void handle_message(const test_status_info& info) {
+        if (info.passed) {
+            printf("\033[1;32mOK\033[0m\n");
+        } else {
+            printf("\033[1;31mFAIL\033[0m\n");
+        }
+    }
+
+    void handle_message(const testing_start_info& info) {
+        printf("Testing %zu devices\n\n", info.device_count);
+    }
+
+    void handle_message(const backend_init_info& info) {
+        printf("Backend %zu/%zu: %s\n", info.device_index + 1, info.total_devices, info.device_name.c_str());
+
+        if (info.skipped) {
+            printf("  %s\n", info.skip_reason.c_str());
+            return;
+        }
+
+        if (!info.description.empty()) {
+            printf("  Device description: %s\n", info.description.c_str());
+        }
+
+        if (info.has_memory_info) {
+            printf("  Device memory: %zu MB (%zu MB free)\n", info.memory_total_mb, info.memory_free_mb);
+        }
+
+        printf("\n");
+    }
+
+    void handle_message(const backend_status_info& info) {
+        printf("  Backend %s: ", info.backend_name.c_str());
+        if (info.passed) {
+            printf("\033[1;32mOK\033[0m\n");
+        } else {
+            printf("\033[1;31mFAIL\033[0m\n");
+        }
+    }
+
+    void handle_message(const overall_summary_info& info) {
+        printf("%zu/%zu backends passed\n", info.backends_passed, info.backends_total);
+        if (info.all_passed) {
+            printf("\033[1;32mOK\033[0m\n");
+        } else {
+            printf("\033[1;31mFAIL\033[0m\n");
+        }
+    }
+
+    void handle_message(const gradient_info& info) {
+        printf("[%s] nonfinite gradient at index %" PRId64 " (%s=%f) ", info.op_desc.c_str(), info.index, info.param_name.c_str(), info.value);
+    }
+
+    void handle_message(const maa_error_info& info) {
+        printf("[%s] MAA = %.9f > %.9f ", info.op_desc.c_str(), info.error, info.threshold);
+    }
+
+    void handle_message(const compare_failure_info& info) {
+        (void)info; // unused
+        printf("compare failed ");
+    }
+
+    void handle_message(const large_tensor_skip_info& info) {
+        (void)info; // unused
+        printf("skipping large tensors for speed \n");
+    }
+
     void print_test_console(const test_result & result) {
         printf("  %s(%s): ", result.op_name.c_str(), result.op_params.c_str());
         fflush(stdout);
@@ -603,16 +868,24 @@ struct sql_printer : public printer {
         fprintf(fout, ");\n");
     }
 
-    // SQL printer ignores most output types - only outputs test results and errors
-    void print_message(message_type type, const char * format, ...) override {
-        if (type == message_type::ERROR) {
-            // Still output errors to stderr for SQL format
-            va_list args;
-            va_start(args, format);
-            vfprintf(stderr, format, args);
-            va_end(args);
+protected:
+    // Implementation that checks type and dispatches to appropriate handler
+    void print_message_impl(const void* data, const char* type_name) override {
+        // Use string comparison to identify types and cast accordingly
+        std::string type_str(type_name);
+
+        if (type_str.find("error_info") != std::string::npos) {
+            handle_message(*static_cast<const error_info*>(data));
         }
-        // All other message types are ignored in SQL format
+    }
+
+private:
+    void handle_message(const error_info& info) {
+        // Only output critical errors that affect SQL generation
+        if (info.component == "backend" || info.component == "allocation") {
+            fprintf(stderr, "Critical error in %s: %s\n", info.component.c_str(),
+                   info.backend_name.empty() ? info.details.c_str() : info.backend_name.c_str());
+        }
     }
 };
 
@@ -1059,41 +1332,46 @@ struct test_case {
         ggml_tensor * out = build_graph(ctx.get());
 
         if ((op_name != nullptr && op_desc(out) != op_name) || out->op == GGML_OP_OPT_STEP_ADAMW) {
-            //output_printer->print_message(message_type::INFO, "  %s: skipping\n", op_desc(out).c_str());
             return true;
         }
-
-        output_printer->print_message(message_type::INFO, "  %s(%s): ", op_desc(out).c_str(), vars().c_str());
 
         if (out->type != GGML_TYPE_F32) {
-            output_printer->print_message(message_type::INFO, "not supported [%s->type != FP32]\n", out->name);
+            output_printer->print_message(test_operation_info(op_desc(out), vars(), ggml_backend_name(backend), false, out->name + std::string("->type != FP32")));
             return true;
         }
+
+        // Print operation info first
+        output_printer->print_message(test_operation_info(op_desc(out), vars(), ggml_backend_name(backend)));
 
         // check if the backend supports the ops
         bool supported = true;
         bool any_params = false;
+        std::string failure_reason;
+
         for (ggml_tensor * t = ggml_get_first_tensor(ctx.get()); t != NULL; t = ggml_get_next_tensor(ctx.get(), t)) {
             if (!ggml_backend_supports_op(backend, t)) {
-                output_printer->print_message(message_type::INFO, "not supported [%s] ", ggml_backend_name(backend));
                 supported = false;
+                failure_reason = ggml_backend_name(backend);
                 break;
             }
             if ((t->flags & GGML_TENSOR_FLAG_PARAM)) {
                 any_params = true;
                 if (t->type != GGML_TYPE_F32) {
-                    output_printer->print_message(message_type::INFO, "not supported [%s->type != FP32] ", t->name);
                     supported = false;
+                    failure_reason = std::string(t->name) + "->type != FP32";
                     break;
                 }
             }
         }
         if (!any_params) {
-            output_printer->print_message(message_type::INFO, "not supported [%s] \n", op_desc(out).c_str());
             supported = false;
+            failure_reason = op_desc(out);
+        }
+
+        if (!supported) {
+            output_printer->print_message(test_operation_info(op_desc(out), vars(), ggml_backend_name(backend), false, failure_reason));
         }
         if (!supported) {
-            output_printer->print_message(message_type::INFO, "\n");
             return true;
         }
 
@@ -1104,7 +1382,7 @@ struct test_case {
             }
         }
         if (ngrads > grad_nmax()) {
-            output_printer->print_message(message_type::INFO, "skipping large tensors for speed \n");
+            output_printer->print_message(large_tensor_skip_info{});
             return true;
         }
 
@@ -1127,25 +1405,24 @@ struct test_case {
 
         for (ggml_tensor * t = ggml_get_first_tensor(ctx.get()); t != NULL; t = ggml_get_next_tensor(ctx.get(), t)) {
             if (!ggml_backend_supports_op(backend, t)) {
-                output_printer->print_message(message_type::INFO, "not supported [%s] ", ggml_backend_name(backend));
+                output_printer->print_message(test_operation_info(op_desc(out), vars(), ggml_backend_name(backend), false, ggml_backend_name(backend)));
                 supported = false;
                 break;
             }
             if ((t->flags & GGML_TENSOR_FLAG_PARAM) && t->type != GGML_TYPE_F32) {
-                output_printer->print_message(message_type::INFO, "not supported [%s->type != FP32] ", t->name);
+                output_printer->print_message(test_operation_info(op_desc(out), vars(), ggml_backend_name(backend), false, std::string(t->name) + "->type != FP32"));
                 supported = false;
                 break;
             }
         }
         if (!supported) {
-            output_printer->print_message(message_type::INFO, "\n");
             return true;
         }
 
         // allocate
         ggml_backend_buffer_ptr buf(ggml_backend_alloc_ctx_tensors(ctx.get(), backend)); // smart ptr
         if (buf == NULL) {
-            output_printer->print_message(message_type::ERROR, "failed to allocate tensors [%s] ", ggml_backend_name(backend));
+            output_printer->print_message(error_info("allocation", "", ggml_backend_name(backend)));
             return false;
         }
 
@@ -1183,7 +1460,7 @@ struct test_case {
             for (int64_t i = 0; i < ne; ++i) { // gradient algebraic
                 // check for nans
                 if (!std::isfinite(ga[i])) {
-                    output_printer->print_message(message_type::INFO, "[%s] nonfinite gradient at index %" PRId64 " (%s=%f) ", ggml_op_desc(t), i, bn, ga[i]);
+                    output_printer->print_message(gradient_info(ggml_op_desc(t), i, bn, ga[i]));
                     ok = false;
                     break;
                 }
@@ -1251,7 +1528,7 @@ struct test_case {
 
             const double err = mean_abs_asymm(gn.data(), ga.data(), gn.size(), expect);
             if (err > max_maa_err()) {
-                output_printer->print_message(message_type::INFO, "[%s] MAA = %.9f > %.9f ", ggml_op_desc(t), err, max_maa_err());
+                output_printer->print_message(maa_error_info(ggml_op_desc(t), err, max_maa_err()));
                 ok = false;
                 break;
             }
@@ -1261,15 +1538,15 @@ struct test_case {
         }
 
         if (!ok) {
-            output_printer->print_message(message_type::INFO, "compare failed ");
+            output_printer->print_message(compare_failure_info{});
         }
 
+        output_printer->print_message(test_status_info(ok));
+
         if (ok) {
-            output_printer->print_message(message_type::STATUS_OK, "");
             return true;
         }
 
-        output_printer->print_message(message_type::STATUS_FAIL, "");
         return false;
     }
 };
@@ -5300,7 +5577,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
         filter_test_cases(test_cases, params_filter);
         ggml_backend_t backend_cpu = ggml_backend_init_by_type(GGML_BACKEND_DEVICE_TYPE_CPU, NULL);
         if (backend_cpu == NULL) {
-            output_printer->print_message(message_type::ERROR, "  Failed to initialize CPU backend\n");
+            output_printer->print_message(error_info("backend", "Failed to initialize CPU backend", "CPU"));
             return false;
         }
 
@@ -5310,7 +5587,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
                 n_ok++;
             }
         }
-        output_printer->print_message(message_type::INFO, "  %zu/%zu tests passed\n", n_ok, test_cases.size());
+        output_printer->print_message(test_summary_info(n_ok, test_cases.size(), false));
 
         ggml_backend_free(backend_cpu);
 
@@ -5326,7 +5603,7 @@ static bool test_backend(ggml_backend_t backend, test_mode mode, const char * op
                 n_ok++;
             }
         }
-        output_printer->print_message(message_type::INFO, "  %zu/%zu tests passed\n", n_ok, test_cases.size());
+        output_printer->print_message(test_summary_info(n_ok, test_cases.size(), false));
 
         return n_ok == test_cases.size();
     }
@@ -5413,23 +5690,21 @@ int main(int argc, char ** argv) {
         output_printer->print_header();
     }
 
-    output_printer->print_message(message_type::INFO, "Testing %zu devices\n\n", ggml_backend_dev_count());
+    output_printer->print_message(testing_start_info(ggml_backend_dev_count()));
 
     size_t n_ok = 0;
 
     for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
         ggml_backend_dev_t dev = ggml_backend_dev_get(i);
 
-        output_printer->print_message(message_type::INFO, "Backend %zu/%zu: %s\n", i + 1, ggml_backend_dev_count(), ggml_backend_dev_name(dev));
-
         if (backend_filter != NULL && strcmp(backend_filter, ggml_backend_dev_name(dev)) != 0) {
-            output_printer->print_message(message_type::INFO, "  Skipping\n");
+            output_printer->print_message(backend_init_info(i, ggml_backend_dev_count(), ggml_backend_dev_name(dev), true, "Skipping"));
             n_ok++;
             continue;
         }
 
         if (backend_filter == NULL && ggml_backend_dev_type(dev) == GGML_BACKEND_DEVICE_TYPE_CPU && mode != MODE_GRAD) {
-            output_printer->print_message(message_type::INFO, "  Skipping CPU backend\n");
+            output_printer->print_message(backend_init_info(i, ggml_backend_dev_count(), ggml_backend_dev_name(dev), true, "Skipping CPU backend"));
             n_ok++;
             continue;
         }
@@ -5444,23 +5719,16 @@ int main(int argc, char ** argv) {
             ggml_backend_set_n_threads_fn(backend, std::thread::hardware_concurrency());
         }
 
-        output_printer->print_message(message_type::INFO, "  Device description: %s\n", ggml_backend_dev_description(dev));
         size_t free, total; // NOLINT
         ggml_backend_dev_memory(dev, &free, &total);
-        output_printer->print_message(message_type::INFO, "  Device memory: %zu MB (%zu MB free)\n", total / 1024 / 1024, free / 1024 / 1024);
-        output_printer->print_message(message_type::INFO, "\n");
+        output_printer->print_message(backend_init_info(i, ggml_backend_dev_count(), ggml_backend_dev_name(dev), false, "", ggml_backend_dev_description(dev), total / 1024 / 1024, free / 1024 / 1024, true));
 
         bool ok = test_backend(backend, mode, op_name_filter, params_filter, output_printer.get());
 
-        output_printer->print_message(message_type::INFO, "  Backend %s: ", ggml_backend_name(backend));
         if (ok) {
-            output_printer->print_message(message_type::STATUS_OK, "");
             n_ok++;
-        } else {
-            output_printer->print_message(message_type::STATUS_FAIL, "");
         }
-
-        output_printer->print_message(message_type::INFO, "\n");
+        output_printer->print_message(backend_status_info(ggml_backend_name(backend), ok));
 
         ggml_backend_free(backend);
     }
@@ -5471,13 +5739,11 @@ int main(int argc, char ** argv) {
         output_printer->print_footer();
     }
 
-    output_printer->print_message(message_type::INFO, "%zu/%zu backends passed\n", n_ok, ggml_backend_dev_count());
+    output_printer->print_message(overall_summary_info(n_ok, ggml_backend_dev_count(), n_ok == ggml_backend_dev_count()));
 
     if (n_ok != ggml_backend_dev_count()) {
-        output_printer->print_message(message_type::STATUS_FAIL, "");
         return 1;
     }
 
-    output_printer->print_message(message_type::STATUS_OK, "");
     return 0;
 }
