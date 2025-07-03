@@ -442,13 +442,6 @@ struct test_result {
     }
 };
 
-// Enum for test status
-enum class test_status_t {
-    NOT_SUPPORTED,
-    OK,
-    FAIL
-};
-
 // Forward declarations for the visitor pattern
 struct message_visitor;
 
@@ -470,6 +463,12 @@ struct message_visitor {
 };
 
 // Printer classes for different output formats
+enum class test_status_t {
+    NOT_SUPPORTED,
+    OK,
+    FAIL
+};
+
 struct test_operation_info : public message_data {
     std::string op_name;
     std::string op_params;
@@ -636,6 +635,32 @@ struct printer : public message_visitor {
 
     void print_message(const message_data& data) {
         data.accept(*this);
+    }
+
+    // Default implementations for all visit methods (no-op)
+    // Derived classes can override only the ones they care about
+    void visit(const test_operation_info& info) override {
+        (void)info;
+    }
+
+    void visit(const test_summary_info& info) override {
+        (void)info;
+    }
+
+    void visit(const testing_start_info& info) override {
+        (void)info;
+    }
+
+    void visit(const backend_init_info& info) override {
+        (void)info;
+    }
+
+    void visit(const backend_status_info& info) override {
+        (void)info;
+    }
+
+    void visit(const overall_summary_info& info) override {
+        (void)info;
     }
 };
 
@@ -856,31 +881,6 @@ struct sql_printer : public printer {
             fprintf(fout, "'%s'%s", values[i].c_str(), i < values.size() - 1 ? ", " : "");
         }
         fprintf(fout, ");\n");
-    }
-
-    // Visitor pattern implementations - SQL printer doesn't need to handle message types for now
-    void visit(const test_operation_info& info) override {
-        (void)info;
-    }
-
-    void visit(const test_summary_info& info) override {
-        (void)info;
-    }
-
-    void visit(const testing_start_info& info) override {
-        (void)info;
-    }
-
-    void visit(const backend_init_info& info) override {
-        (void)info;
-    }
-
-    void visit(const backend_status_info& info) override {
-        (void)info;
-    }
-
-    void visit(const overall_summary_info& info) override {
-        (void)info;
     }
 };
 
