@@ -449,8 +449,28 @@ enum class test_status_t {
     FAIL
 };
 
+// Forward declarations for the visitor pattern
+struct message_visitor;
+
+// Base class for all message types that can be printed
+struct message_data {
+    virtual ~message_data() {}
+    virtual void accept(message_visitor& visitor) const = 0;
+};
+
+// Message visitor interface
+struct message_visitor {
+    virtual ~message_visitor() {}
+    virtual void visit(const struct test_operation_info& info) = 0;
+    virtual void visit(const struct test_summary_info& info) = 0;
+    virtual void visit(const struct testing_start_info& info) = 0;
+    virtual void visit(const struct backend_init_info& info) = 0;
+    virtual void visit(const struct backend_status_info& info) = 0;
+    virtual void visit(const struct overall_summary_info& info) = 0;
+};
+
 // Printer classes for different output formats
-struct test_operation_info {
+struct test_operation_info : public message_data {
     std::string op_name;
     std::string op_params;
     std::string backend_name;
@@ -481,6 +501,10 @@ struct test_operation_info {
     test_operation_info(const std::string& op_name, const std::string& op_params, const std::string& backend_name,
                        test_status_t status = test_status_t::OK, const std::string& failure_reason = "")
         : op_name(op_name), op_params(op_params), backend_name(backend_name), status(status), failure_reason(failure_reason) {}
+
+    void accept(message_visitor& visitor) const override {
+        visitor.visit(*this);
+    }
 
     // Set error information
     void set_error(const std::string& component, const std::string& details) {
@@ -527,7 +551,7 @@ struct test_operation_info {
     }
 };
 
-struct test_summary_info {
+struct test_summary_info : public message_data {
     size_t tests_passed;
     size_t tests_total;
     bool is_backend_summary = false; // true for backend summary, false for test summary
@@ -535,16 +559,24 @@ struct test_summary_info {
     test_summary_info() = default;
     test_summary_info(size_t tests_passed, size_t tests_total, bool is_backend_summary = false)
         : tests_passed(tests_passed), tests_total(tests_total), is_backend_summary(is_backend_summary) {}
+
+    void accept(message_visitor& visitor) const override {
+        visitor.visit(*this);
+    }
 };
 
-struct testing_start_info {
+struct testing_start_info : public message_data {
     size_t device_count;
 
     testing_start_info() = default;
     testing_start_info(size_t device_count) : device_count(device_count) {}
+
+    void accept(message_visitor& visitor) const override {
+        visitor.visit(*this);
+    }
 };
 
-struct backend_init_info {
+struct backend_init_info : public message_data {
     size_t device_index;
     size_t total_devices;
     std::string device_name;
@@ -562,18 +594,26 @@ struct backend_init_info {
         : device_index(device_index), total_devices(total_devices), device_name(device_name), skipped(skipped),
           skip_reason(skip_reason), description(description), memory_total_mb(memory_total_mb),
           memory_free_mb(memory_free_mb), has_memory_info(has_memory_info) {}
+
+    void accept(message_visitor& visitor) const override {
+        visitor.visit(*this);
+    }
 };
 
-struct backend_status_info {
+struct backend_status_info : public message_data {
     std::string backend_name;
     test_status_t status;
 
     backend_status_info() = default;
     backend_status_info(const std::string& backend_name, test_status_t status)
         : backend_name(backend_name), status(status) {}
+
+    void accept(message_visitor& visitor) const override {
+        visitor.visit(*this);
+    }
 };
 
-struct overall_summary_info {
+struct overall_summary_info : public message_data {
     size_t backends_passed;
     size_t backends_total;
     bool all_passed;
@@ -581,22 +621,22 @@ struct overall_summary_info {
     overall_summary_info() = default;
     overall_summary_info(size_t backends_passed, size_t backends_total, bool all_passed)
         : backends_passed(backends_passed), backends_total(backends_total), all_passed(all_passed) {}
+
+    void accept(message_visitor& visitor) const override {
+        visitor.visit(*this);
+    }
 };
 
-struct printer {
+struct printer : public message_visitor {
     virtual ~printer() {}
     FILE * fout = stdout;
     virtual void print_header() {}
     virtual void print_test_result(const test_result & result) = 0;
     virtual void print_footer() {}
 
-    template<typename T>
-    void print_message(const T& data) {
-        print_message_impl(&data, typeid(T).name());
+    void print_message(const message_data& data) {
+        data.accept(*this);
     }
-
-protected:
-    virtual void print_message_impl(const void* data, const char* type_name) = 0;
 };
 
 struct console_printer : public printer {
@@ -608,29 +648,8 @@ struct console_printer : public printer {
         }
     }
 
-protected:
-    void print_message_impl(const void* data, const char* type_name) override {
-        std::string type_str(type_name);
-
-        if (type_str.find("test_operation_info") != std::string::npos) {
-            handle_message(*static_cast<const test_operation_info*>(data));
-        } else if (type_str.find("test_summary_info") != std::string::npos) {
-            handle_message(*static_cast<const test_summary_info*>(data));
-        } else if (type_str.find("testing_start_info") != std::string::npos) {
-            handle_message(*static_cast<const testing_start_info*>(data));
-        } else if (type_str.find("backend_init_info") != std::string::npos) {
-            handle_message(*static_cast<const backend_init_info*>(data));
-        } else if (type_str.find("backend_status_info") != std::string::npos) {
-            handle_message(*static_cast<const backend_status_info*>(data));
-        } else if (type_str.find("overall_summary_info") != std::string::npos) {
-            handle_message(*static_cast<const overall_summary_info*>(data));
-        } else {
-            GGML_ABORT("unknown message type: %s", type_name);
-        }
-    }
-
-private:
-    void handle_message(const test_operation_info& info) {
+    // Visitor pattern implementations
+    void visit(const test_operation_info& info) override {
         printf("  %s(%s): ", info.op_name.c_str(), info.op_params.c_str());
         fflush(stdout);
 
@@ -685,7 +704,7 @@ private:
         }
     }
 
-    void handle_message(const test_summary_info& info) {
+    void visit(const test_summary_info& info) override {
         if (info.is_backend_summary) {
             printf("%zu/%zu backends passed\n", info.tests_passed, info.tests_total);
         } else {
@@ -693,7 +712,7 @@ private:
         }
     }
 
-    void handle_message(const backend_status_info& info) {
+    void visit(const backend_status_info& info) override {
         printf("  Backend %s: ", info.backend_name.c_str());
         if (info.status == test_status_t::OK) {
             printf("\033[1;32mOK\033[0m\n");
@@ -702,11 +721,11 @@ private:
         }
     }
 
-    void handle_message(const testing_start_info& info) {
+    void visit(const testing_start_info& info) override {
         printf("Testing %zu devices\n\n", info.device_count);
     }
 
-    void handle_message(const backend_init_info& info) {
+    void visit(const backend_init_info& info) override {
         printf("Backend %zu/%zu: %s\n", info.device_index + 1, info.total_devices, info.device_name.c_str());
 
         if (info.skipped) {
@@ -725,7 +744,7 @@ private:
         printf("\n");
     }
 
-    void handle_message(const overall_summary_info& info) {
+    void visit(const overall_summary_info& info) override {
         printf("%zu/%zu backends passed\n", info.backends_passed, info.backends_total);
         if (info.all_passed) {
             printf("\033[1;32mOK\033[0m\n");
@@ -734,6 +753,7 @@ private:
         }
     }
 
+private:
     void print_test_console(const test_result & result) {
         printf("  %s(%s): ", result.op_name.c_str(), result.op_params.c_str());
         fflush(stdout);
@@ -838,13 +858,29 @@ struct sql_printer : public printer {
         fprintf(fout, ");\n");
     }
 
-protected:
-    // Implementation that checks type and dispatches to appropriate handler
-    void print_message_impl(const void* data, const char* type_name) override {
-        // SQL printer doesn't need to handle message types for now
-        // All necessary output is handled through print_test_result
-        (void)data;
-        (void)type_name;
+    // Visitor pattern implementations - SQL printer doesn't need to handle message types for now
+    void visit(const test_operation_info& info) override {
+        (void)info;
+    }
+
+    void visit(const test_summary_info& info) override {
+        (void)info;
+    }
+
+    void visit(const testing_start_info& info) override {
+        (void)info;
+    }
+
+    void visit(const backend_init_info& info) override {
+        (void)info;
+    }
+
+    void visit(const backend_status_info& info) override {
+        (void)info;
+    }
+
+    void visit(const overall_summary_info& info) override {
+        (void)info;
     }
 };
 
