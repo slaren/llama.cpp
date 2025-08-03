@@ -6642,6 +6642,10 @@ class Glm4MoeModel(TextModel):
         if (norm_topk_prob := self.hparams.get("norm_topk_prob")) is not None:
             self.gguf_writer.add_expert_weights_norm(norm_topk_prob)
 
+        # NextN/MTP prediction layers
+        if (num_nextn_predict_layers := self.hparams.get("num_nextn_predict_layers")) is not None:
+            self.gguf_writer.add_num_nextn_predict_layers(num_nextn_predict_layers)
+
     _experts: list[dict[str, Tensor]] | None = None
 
     def modify_tensors(
@@ -6690,17 +6694,6 @@ class Glm4MoeModel(TextModel):
 
         if name.endswith("e_score_correction_bias"):
             name = name.replace("e_score_correction_bias", "e_score_correction.bias")
-
-        # Handle special NextN tensors - preserve for future MTP support
-        if (
-            ".embed_tokens." in name
-            or ".shared_head." in name
-            or ".eh_proj." in name
-            or ".enorm." in name
-            or ".hnorm." in name
-        ):
-            new_name = name.replace("model.layers.", "blk.").replace("model.", "").replace(".weight", "")
-            return [(new_name, data_torch)]
 
         new_name = self.map_tensor_name(name)
 

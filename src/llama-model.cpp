@@ -1438,6 +1438,9 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                     hparams.expert_gating_func = LLAMA_EXPERT_GATING_FUNC_TYPE_SIGMOID;
                 }
 
+                // NextN/MTP parameters
+                ml.get_key(LLM_KV_NUM_NEXTN_PREDICT_LAYERS,    hparams.num_nextn_predict_layers, false);
+
                 switch (hparams.n_layer) {
                     case 47: type = LLM_TYPE_106B_A12B; break; // GLM-4.5-Air (46 layers + 1 NextN layer)
                     case 93: type = LLM_TYPE_355B_A32B; break; // GLM-4.5 (92 layers + 1 NextN layer)
@@ -4391,14 +4394,16 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), { n_embd, n_vocab }, TENSOR_DUPLICATED);
                     }
 
-                    // NextN/MTP tensors (preserved but unused) - only in final layer (46 for Air, 92 for GLM-4.5)
-                    const int final_layer = n_layer - 1; // NextN tensors are in the last layer only
-                    create_tensor(tn(LLM_TENSOR_NEXTN_EH_PROJ, final_layer), { 2 * n_embd, n_embd }, TENSOR_NOT_REQUIRED);
-                    create_tensor(tn(LLM_TENSOR_NEXTN_EMBED_TOKENS, final_layer), { n_embd, n_vocab }, TENSOR_NOT_REQUIRED);
-                    create_tensor(tn(LLM_TENSOR_NEXTN_ENORM, final_layer), { n_embd }, TENSOR_NOT_REQUIRED);
-                    create_tensor(tn(LLM_TENSOR_NEXTN_HNORM, final_layer), { n_embd }, TENSOR_NOT_REQUIRED);
-                    create_tensor(tn(LLM_TENSOR_NEXTN_SHARED_HEAD_HEAD, final_layer), { n_embd, n_vocab }, TENSOR_NOT_REQUIRED);
-                    create_tensor(tn(LLM_TENSOR_NEXTN_SHARED_HEAD_NORM, final_layer), { n_embd }, TENSOR_NOT_REQUIRED);
+                    // NextN/MTP tensors (preserved but unused) - conditionally load based on num_nextn_predict_layers
+                    const uint32_t n_nextn_layers = hparams.num_nextn_predict_layers > 0 ? hparams.num_nextn_predict_layers : 1;
+                    for (uint32_t i = n_layer - n_nextn_layers; i < n_layer; ++i) {
+                        create_tensor(tn(LLM_TENSOR_NEXTN_EH_PROJ, i), { 2 * n_embd, n_embd }, TENSOR_NOT_REQUIRED);
+                        create_tensor(tn(LLM_TENSOR_NEXTN_EMBED_TOKENS, i), { n_embd, n_vocab }, TENSOR_NOT_REQUIRED);
+                        create_tensor(tn(LLM_TENSOR_NEXTN_ENORM, i), { n_embd }, TENSOR_NOT_REQUIRED);
+                        create_tensor(tn(LLM_TENSOR_NEXTN_HNORM, i), { n_embd }, TENSOR_NOT_REQUIRED);
+                        create_tensor(tn(LLM_TENSOR_NEXTN_SHARED_HEAD_HEAD, i), { n_embd, n_vocab }, TENSOR_NOT_REQUIRED);
+                        create_tensor(tn(LLM_TENSOR_NEXTN_SHARED_HEAD_NORM, i), { n_embd }, TENSOR_NOT_REQUIRED);
+                    }
 
                     // Load ALL tensors including NextN layer to satisfy total tensor count
                     // but only PROCESS up to last layer (skipping final NextN layer) in forward pass
