@@ -1404,9 +1404,9 @@ static const std::map<llm_arch, std::map<llm_tensor, const char *>> LLM_TENSOR_N
             { LLM_TENSOR_ATTN_OUT,           "blk.%d.attn_output" },
             { LLM_TENSOR_ATTN_Q_NORM,        "blk.%d.attn_q_norm" },
             { LLM_TENSOR_ATTN_K_NORM,        "blk.%d.attn_k_norm" },
-            { LLM_TENSOR_FFN_GATE,           "blk.%d.ffn_gate" },        // dense layers
-            { LLM_TENSOR_FFN_DOWN,           "blk.%d.ffn_down" },        // dense layers
-            { LLM_TENSOR_FFN_UP,             "blk.%d.ffn_up" },          // dense layers
+            { LLM_TENSOR_FFN_GATE,           "blk.%d.ffn_gate" },
+            { LLM_TENSOR_FFN_DOWN,           "blk.%d.ffn_down" },
+            { LLM_TENSOR_FFN_UP,             "blk.%d.ffn_up" },
             { LLM_TENSOR_FFN_GATE_INP,       "blk.%d.ffn_gate_inp" },
             { LLM_TENSOR_FFN_GATE_EXPS,      "blk.%d.ffn_gate_exps" },
             { LLM_TENSOR_FFN_DOWN_EXPS,      "blk.%d.ffn_down_exps" },
@@ -2178,7 +2178,7 @@ static const std::map<llm_tensor, llm_tensor_info> LLM_TENSOR_INFOS = {
     {LLM_TENSOR_SHORTCONV_INPROJ,           {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
     {LLM_TENSOR_SHORTCONV_OUTPROJ,          {LLM_TENSOR_LAYER_REPEATING, GGML_OP_MUL_MAT}},
     // NextN/MTP tensors are loaded but never used (reserved for future MTP support)
-    // These tensors only exist in the last layer (layer 46 for GLM-4.5-Air) and are treated as output tensors
+    // These tensors only exist in the last layer and are treated as output tensors
     {LLM_TENSOR_NEXTN_EH_PROJ,              {LLM_TENSOR_LAYER_OUTPUT, GGML_OP_NONE}},
     {LLM_TENSOR_NEXTN_EMBED_TOKENS,         {LLM_TENSOR_LAYER_OUTPUT, GGML_OP_NONE}},
     {LLM_TENSOR_NEXTN_ENORM,                {LLM_TENSOR_LAYER_OUTPUT, GGML_OP_NONE}},

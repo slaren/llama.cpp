@@ -40,7 +40,7 @@ llama_kv_cache_unified::llama_kv_cache_unified(
         n_layer_cache = 20;
     }
     if (model.arch == LLM_ARCH_GLM4_MOE) {
-        // GLM4_MOE: Only process first 46 transformer layers, skip NextN layer
+        // GLM-4.5: Only process up to last layer, skip final NextN layer
         n_layer_cache = hparams.n_layer - 1;
     }
 

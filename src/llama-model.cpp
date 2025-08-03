@@ -109,9 +109,9 @@ const char * llm_type_name(llm_type type) {
         case LLM_TYPE_A13B:          return "A13B";
         case LLM_TYPE_21B_A3B:       return "21B.A3B";
         case LLM_TYPE_30B_A3B:       return "30B.A3B";
+        case LLM_TYPE_106B_A12B:     return "106B.A12B";
         case LLM_TYPE_235B_A22B:     return "235B.A22B";
         case LLM_TYPE_300B_A47B:     return "300B.A47B";
-        case LLM_TYPE_106B_A12B:     return "106B.A12B";
         case LLM_TYPE_355B_A32B:     return "355B.A32B";
         case LLM_TYPE_E2B:           return "E2B";
         case LLM_TYPE_E4B:           return "E4B";
@@ -1432,7 +1432,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 ml.get_key(LLM_KV_EXPERT_WEIGHTS_SCALE,        hparams.expert_weights_scale);
                 ml.get_key(LLM_KV_EXPERT_WEIGHTS_NORM,         hparams.expert_weights_norm, false);
 
-                // Expert gating function (GLM4_MOE uses sigmoid)
+                // Expert gating function (GLM-4.5 uses sigmoid)
                 ml.get_key(LLM_KV_EXPERT_GATING_FUNC,          hparams.expert_gating_func, false);
                 if (hparams.expert_gating_func == LLAMA_EXPERT_GATING_FUNC_TYPE_NONE) {
                     hparams.expert_gating_func = LLAMA_EXPERT_GATING_FUNC_TYPE_SIGMOID;
@@ -4400,8 +4400,8 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     create_tensor(tn(LLM_TENSOR_NEXTN_SHARED_HEAD_HEAD, final_layer), { n_embd, n_vocab }, TENSOR_NOT_REQUIRED);
                     create_tensor(tn(LLM_TENSOR_NEXTN_SHARED_HEAD_NORM, final_layer), { n_embd }, TENSOR_NOT_REQUIRED);
 
-                    // Load ALL tensors including NextN layer to satisfy tensor count (803)
-                    // but only PROCESS first 46 transformer layers in forward pass
+                    // Load ALL tensors including NextN layer to satisfy total tensor count
+                    // but only PROCESS up to last layer (skipping final NextN layer) in forward pass
                     for (int i = 0; i < n_layer; ++i) {
                         auto & layer = layers[i];
 
@@ -4423,7 +4423,7 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                         layer.attn_k_norm = create_tensor(
                             tn(LLM_TENSOR_ATTN_K_NORM, "weight", i), { n_embd_head_k }, TENSOR_NOT_REQUIRED);
 
-                        layer.attn_post_norm = create_tensor(tn(LLM_TENSOR_ATTN_POST_NORM, "weight", i), {n_embd}, 0);
+                        layer.attn_post_norm = create_tensor(tn(LLM_TENSOR_ATTN_POST_NORM, "weight", i), { n_embd }, 0);
 
                         // Check if this layer uses MoE or dense FFN based on n_layer_dense_lead
                         // GLM 4.5 uses hybrid architecture: layer 0 is dense, layers 1+ are MoE
@@ -4448,18 +4448,18 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                             // Shared expert
                             if (n_expert_shared > 0) {
                                 const int64_t n_ff_shexp = n_ff_exp * n_expert_shared;
-                                layer.ffn_gate_shexp     = create_tensor(
+                                layer.ffn_gate_shexp = create_tensor(
                                     tn(LLM_TENSOR_FFN_GATE_SHEXP, "weight", i), { n_embd, n_ff_shexp }, 0);
                                 layer.ffn_down_shexp = create_tensor(
                                     tn(LLM_TENSOR_FFN_DOWN_SHEXP, "weight", i), { n_ff_shexp, n_embd }, 0);
-                                layer.ffn_up_shexp =
-                                    create_tensor(tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i), { n_embd, n_ff_shexp }, 0);
+                                layer.ffn_up_shexp = create_tensor(
+                                    tn(LLM_TENSOR_FFN_UP_SHEXP, "weight", i), { n_embd, n_ff_shexp }, 0);
                             }
                         } else {
                             // Dense layers (first k layers) - GLM uses separate gate/up projections
                             layer.ffn_gate = create_tensor(tn(LLM_TENSOR_FFN_GATE, "weight", i), { n_embd, n_ff }, 0);
                             layer.ffn_down = create_tensor(tn(LLM_TENSOR_FFN_DOWN, "weight", i), { n_ff, n_embd }, 0);
-                            layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP, "weight", i), { n_embd, n_ff }, 0);
+                            layer.ffn_up   = create_tensor(tn(LLM_TENSOR_FFN_UP,   "weight", i), { n_embd, n_ff }, 0);
                         }
 
                     }
@@ -13487,8 +13487,8 @@ struct llm_build_glm4_moe : public llm_graph_context {
 
         ggml_tensor * inp_out_ids = build_inp_out_ids();
 
-        // Only process first 46 transformer layers (skip NextN layer 46)
-        // Layer 46 tensors are loaded but not processed in forward pass
+        // Only process up to last layer (skip final NextN layer)
+        // Final layer tensors are loaded but not processed in forward pass
         const int n_transformer_layers = n_layer - 1;
         for (int il = 0; il < n_transformer_layers; ++il) {
             ggml_tensor * inpSA = inpL;

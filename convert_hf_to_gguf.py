@@ -6603,18 +6603,11 @@ class Glm4MoeModel(TextModel):
         self.gguf_writer.add_token_types(toktypes)
 
         # Special tokens
-        # Note: Using <|endoftext|> (151329) for eos and eot causes endless generation
+        # Note: Using <|endoftext|> (151329) for eot causes endless generation
         special_vocab._set_special_token("bos", tokenizer.get_added_vocab()["[gMASK]"])  # 151331
-        special_vocab._set_special_token("eos", tokenizer.get_added_vocab()["<|user|>"])  # 151336 - end of
-        special_vocab._set_special_token("eot", tokenizer.get_added_vocab()["<|user|>"])  # 151336 - same as EOS
-        special_vocab._set_special_token("eog", tokenizer.get_added_vocab()["<|user|>"])  # 151336 - same as EOS
+        special_vocab._set_special_token("eot", tokenizer.get_added_vocab()["<|user|>"])  # 151336
         special_vocab._set_special_token("unk", tokenizer.get_added_vocab()["<|endoftext|>"]) # 151329
         special_vocab._set_special_token("eom", tokenizer.get_added_vocab()["<|observation|>"])  # 151338
-
-        if "<sop>" in tokenizer.get_added_vocab():
-            special_vocab._set_special_token("sop", tokenizer.get_added_vocab()["<sop>"])  # 151333
-        if "<eop>" in tokenizer.get_added_vocab():
-            special_vocab._set_special_token("eop", tokenizer.get_added_vocab()["<eop>"])  # 151334
 
         special_vocab.add_to_gguf(self.gguf_writer)
 
@@ -6631,8 +6624,6 @@ class Glm4MoeModel(TextModel):
         # MoE parameters - Use only routed expert count (shared experts handled separately)
         if (n_routed_experts := self.hparams.get("n_routed_experts")) is not None:
             self.gguf_writer.add_expert_count(n_routed_experts)
-        if (num_experts_per_tok := self.hparams.get("num_experts_per_tok")) is not None:
-            self.gguf_writer.add_expert_used_count(num_experts_per_tok)
         if (moe_intermediate_size := self.hparams.get("moe_intermediate_size")) is not None:
             self.gguf_writer.add_expert_feed_forward_length(moe_intermediate_size)
         if (n_shared_experts := self.hparams.get("n_shared_experts")) is not None:
@@ -6740,7 +6731,7 @@ class ChatGLMModel(TextModel):
         vocab_size = hparams.get("padded_vocab_size", len(tokenizer.get_vocab()))
         assert max(tokenizer.get_vocab().values()) < vocab_size
         role_special_tokens = ["<|system|>", "<|user|>", "<|assistant|>", "<|observation|>"]
-        special_tokens = ["[MASK]", "[gMASK]", "sop", "eop"] + role_special_tokens
+        special_tokens = ["[MASK]", "[gMASK]", "[sMASK]", "sop", "eop"] + role_special_tokens
         for token_id in range(vocab_size):
             piece = tokenizer._convert_id_to_token(token_id)
             if token_id == 0:

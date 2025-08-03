@@ -610,12 +610,13 @@ class MODEL_TENSOR(IntEnum):
     A_MMPROJ_FC          = auto()
     A_MM_NORM_PRE        = auto()
     A_MM_NORM_MID        = auto()
-    NEXTN_EH_PROJ        = auto()   # nextn tensors (glm4moe)
-    NEXTN_EMBED_TOKENS   = auto()   # nextn tensors (glm4moe)
-    NEXTN_ENORM          = auto()   # nextn tensors (glm4moe)
-    NEXTN_HNORM          = auto()   # nextn tensors (glm4moe)
-    NEXTN_SHARED_HEAD_HEAD = auto() # nextn tensors (glm4moe)
-    NEXTN_SHARED_HEAD_NORM = auto() # nextn tensors (glm4moe)
+    # nextn/mtp
+    NEXTN_EH_PROJ        = auto()
+    NEXTN_EMBED_TOKENS   = auto()
+    NEXTN_ENORM          = auto()
+    NEXTN_HNORM          = auto()
+    NEXTN_SHARED_HEAD_HEAD = auto()
+    NEXTN_SHARED_HEAD_NORM = auto()
 
 
 MODEL_ARCH_NAMES: dict[MODEL_ARCH, str] = {
@@ -937,7 +938,7 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
     MODEL_TENSOR.A_MMPROJ_FC:               "mm.a.fc",
     MODEL_TENSOR.A_MM_NORM_PRE:             "mm.a.norm_pre",
     MODEL_TENSOR.A_MM_NORM_MID:             "mm.a.norm_mid",
-    # NextN/MTP tensors (GLM4_MOE)
+    # NextN/MTP
     MODEL_TENSOR.NEXTN_EH_PROJ:             "blk.{bid}.eh_proj",
     MODEL_TENSOR.NEXTN_EMBED_TOKENS:        "blk.{bid}.embed_tokens",
     MODEL_TENSOR.NEXTN_ENORM:               "blk.{bid}.enorm",
@@ -2129,9 +2130,9 @@ MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
         MODEL_TENSOR.ATTN_OUT,
         MODEL_TENSOR.ATTN_Q_NORM,
         MODEL_TENSOR.ATTN_K_NORM,
-        MODEL_TENSOR.FFN_GATE,          # dense layers
-        MODEL_TENSOR.FFN_DOWN,          # dense layers
-        MODEL_TENSOR.FFN_UP,            # dense layers
+        MODEL_TENSOR.FFN_GATE,
+        MODEL_TENSOR.FFN_DOWN,
+        MODEL_TENSOR.FFN_UP,
         MODEL_TENSOR.FFN_GATE_INP,
         MODEL_TENSOR.FFN_GATE_EXP,
         MODEL_TENSOR.FFN_DOWN_EXP,
