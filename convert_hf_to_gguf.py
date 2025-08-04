@@ -6644,7 +6644,7 @@ class Glm4MoeModel(TextModel):
 
         # NextN/MTP prediction layers
         if (num_nextn_predict_layers := self.hparams.get("num_nextn_predict_layers")) is not None:
-            self.gguf_writer.add_num_nextn_predict_layers(num_nextn_predict_layers)
+            self.gguf_writer.add_nextn_predict_layers(num_nextn_predict_layers)
 
     _experts: list[dict[str, Tensor]] | None = None
 

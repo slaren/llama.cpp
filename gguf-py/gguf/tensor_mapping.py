@@ -1351,27 +1351,27 @@ class TensorNameMap:
 
         # NextN/MTP tensors for GLM4_MOE
         MODEL_TENSOR.NEXTN_EH_PROJ: (
-            "model.layers.{bid}.eh_proj.weight",
+            "model.layers.{bid}.eh_proj",
         ),
 
         MODEL_TENSOR.NEXTN_EMBED_TOKENS: (
-            "model.layers.{bid}.embed_tokens.weight",
+            "model.layers.{bid}.embed_tokens",
         ),
 
         MODEL_TENSOR.NEXTN_ENORM: (
-            "model.layers.{bid}.enorm.weight",
+            "model.layers.{bid}.enorm",
         ),
 
         MODEL_TENSOR.NEXTN_HNORM: (
-            "model.layers.{bid}.hnorm.weight",
+            "model.layers.{bid}.hnorm",
         ),
 
         MODEL_TENSOR.NEXTN_SHARED_HEAD_HEAD: (
-            "model.layers.{bid}.shared_head.head.weight",
+            "model.layers.{bid}.shared_head.head",
         ),
 
         MODEL_TENSOR.NEXTN_SHARED_HEAD_NORM: (
-            "model.layers.{bid}.shared_head.norm.weight",
+            "model.layers.{bid}.shared_head.norm",
         ),
     }
 

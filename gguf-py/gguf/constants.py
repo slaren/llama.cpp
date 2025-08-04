@@ -105,7 +105,7 @@ class Keys:
         EXPERT_WEIGHTS_NORM               = "{arch}.expert_weights_norm"
         EXPERT_GATING_FUNC                = "{arch}.expert_gating_func"
         MOE_EVERY_N_LAYERS                = "{arch}.moe_every_n_layers"
-        NUM_NEXTN_PREDICT_LAYERS          = "{arch}.num_nextn_predict_layers"
+        NEXTN_PREDICT_LAYERS              = "{arch}.num_nextn_predict_layers"
         POOLING_TYPE                      = "{arch}.pooling_type"
         LOGIT_SCALE                       = "{arch}.logit_scale"
         DECODER_START_TOKEN_ID            = "{arch}.decoder_start_token_id"
@@ -940,12 +940,12 @@ TENSOR_NAMES: dict[MODEL_TENSOR, str] = {
     MODEL_TENSOR.A_MM_NORM_PRE:             "mm.a.norm_pre",
     MODEL_TENSOR.A_MM_NORM_MID:             "mm.a.norm_mid",
     # NextN/MTP
-    MODEL_TENSOR.NEXTN_EH_PROJ:             "blk.{bid}.eh_proj",
-    MODEL_TENSOR.NEXTN_EMBED_TOKENS:        "blk.{bid}.embed_tokens",
-    MODEL_TENSOR.NEXTN_ENORM:               "blk.{bid}.enorm",
-    MODEL_TENSOR.NEXTN_HNORM:               "blk.{bid}.hnorm",
-    MODEL_TENSOR.NEXTN_SHARED_HEAD_HEAD:    "blk.{bid}.shared_head.head",
-    MODEL_TENSOR.NEXTN_SHARED_HEAD_NORM:    "blk.{bid}.shared_head.norm",
+    MODEL_TENSOR.NEXTN_EH_PROJ:             "blk.{bid}.nextn.eh_proj",
+    MODEL_TENSOR.NEXTN_EMBED_TOKENS:        "blk.{bid}.nextn.embed_tokens",
+    MODEL_TENSOR.NEXTN_ENORM:               "blk.{bid}.nextn.enorm",
+    MODEL_TENSOR.NEXTN_HNORM:               "blk.{bid}.nextn.hnorm",
+    MODEL_TENSOR.NEXTN_SHARED_HEAD_HEAD:    "blk.{bid}.nextn.shared_head_head",
+    MODEL_TENSOR.NEXTN_SHARED_HEAD_NORM:    "blk.{bid}.nextn.shared_head_norm",
 }
 
 MODEL_TENSORS: dict[MODEL_ARCH, list[MODEL_TENSOR]] = {
