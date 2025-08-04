@@ -1439,7 +1439,7 @@ void llama_model::load_hparams(llama_model_loader & ml) {
                 }
 
                 // NextN/MTP parameters
-                ml.get_key(LLM_KV_NEXTN_PREDICT_LAYERS,    hparams.nextn_predict_layers, false);
+                ml.get_key(LLM_KV_NEXTN_PREDICT_LAYERS,        hparams.nextn_predict_layers, false);
 
                 switch (hparams.n_layer) {
                     case 47: type = LLM_TYPE_106B_A12B; break; // GLM-4.5-Air (46 layers + 1 NextN layer)
@@ -4393,7 +4393,6 @@ bool llama_model::load_tensors(llama_model_loader & ml) {
                     if (output == NULL) {
                         output = create_tensor(tn(LLM_TENSOR_TOKEN_EMBD, "weight"), { n_embd, n_vocab }, TENSOR_DUPLICATED);
                     }
-
 
                     // Load ALL tensors including NextN layer to satisfy total tensor count
                     // but only PROCESS up to last layer (skipping final NextN layer) in forward pass

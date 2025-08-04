@@ -105,7 +105,7 @@ class Keys:
         EXPERT_WEIGHTS_NORM               = "{arch}.expert_weights_norm"
         EXPERT_GATING_FUNC                = "{arch}.expert_gating_func"
         MOE_EVERY_N_LAYERS                = "{arch}.moe_every_n_layers"
-        NEXTN_PREDICT_LAYERS              = "{arch}.num_nextn_predict_layers"
+        NEXTN_PREDICT_LAYERS              = "{arch}.nextn_predict_layers"
         POOLING_TYPE                      = "{arch}.pooling_type"
         LOGIT_SCALE                       = "{arch}.logit_scale"
         DECODER_START_TOKEN_ID            = "{arch}.decoder_start_token_id"
