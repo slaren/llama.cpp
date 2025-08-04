@@ -13494,7 +13494,7 @@ struct llm_build_glm4_moe : public llm_graph_context {
 
         // Only process up to last layer (skip final NextN layer)
         // Final layer tensors are loaded but not processed in forward pass
-        const int n_transformer_layers = n_layer - hparam.nextn_predict_layers;
+        const int n_transformer_layers = n_layer - hparams.nextn_predict_layers;
         for (int il = 0; il < n_transformer_layers; ++il) {
             ggml_tensor * inpSA = inpL;
 
