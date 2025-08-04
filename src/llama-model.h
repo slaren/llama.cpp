@@ -168,6 +168,15 @@ struct llama_layer_shortconv {
     struct ggml_tensor * out_proj = nullptr;
 };
 
+struct llama_layer_nextn {
+    struct ggml_tensor * eh_proj          = nullptr;
+    struct ggml_tensor * embed_tokens     = nullptr;
+    struct ggml_tensor * enorm            = nullptr;
+    struct ggml_tensor * hnorm            = nullptr;
+    struct ggml_tensor * shared_head_head = nullptr;
+    struct ggml_tensor * shared_head_norm = nullptr;
+};
+
 struct llama_layer {
     // normalization
     struct ggml_tensor * attn_norm       = nullptr;
@@ -356,6 +365,8 @@ struct llama_layer {
     struct llama_layer_convnext convnext;
 
     struct llama_layer_shortconv shortconv;
+
+    struct llama_layer_nextn nextn;
 };
 
 struct llama_model {
