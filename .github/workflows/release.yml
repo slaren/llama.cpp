@@ -611,10 +611,12 @@ jobs:
             -DLLAMA_CURL=OFF
           cmake --build build --target ggml-hip -j ${env:NUMBER_OF_PROCESSORS}
           md "build\bin\rocblas\library\"
+          md "build\bin\hipblaslt\library"
           cp "${env:HIP_PATH}\bin\hipblas.dll" "build\bin\"
           cp "${env:HIP_PATH}\bin\hipblaslt.dll" "build\bin\"
           cp "${env:HIP_PATH}\bin\rocblas.dll" "build\bin\"
           cp "${env:HIP_PATH}\bin\rocblas\library\*" "build\bin\rocblas\library\"
+          cp "${env:HIP_PATH}\bin\hipblaslt\library\*" "build\bin\hipblaslt\library\"
 
       - name: Pack artifacts
         id: pack_artifacts
