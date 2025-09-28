@@ -1153,7 +1153,7 @@ jobs:
           -DCMAKE_CXX_COMPILER="${env:HIP_PATH}\bin\clang++.exe" `
           -DCMAKE_C_COMPILER=="${env:HIP_PATH}\bin\clang.exe" `
           -DCMAKE_POLICY_VERSION_MINIMUM=3.5 `
-          -DCMAKE_INSTALL_PREFIX=./install
+          -DCMAKE_INSTALL_PREFIX=".\install"
           cmake --install build
           cd ..
 
