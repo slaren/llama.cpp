@@ -484,7 +484,17 @@ If you already have a recent version of Microsoft Visual Studio, you can skip th
 
 3. Install Intel® oneAPI Base toolkit
 
-The base toolkit can be obtained from the official [Intel® oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html) page.
+SYCL backend depends on:
+  - Intel® oneAPI DPC++/C++ compiler/running-time.
+  - Intel® oneAPI DPC++/C++ library (oneDPL).
+  - Intel® oneAPI Deep Neural Network Library (oneDNN).
+  - Intel® oneAPI Math Kernel Library (oneMKL).
+
+All above are included in both **Intel® oneAPI Base toolkit** and **Intel® Deep Learning Essentials** packages.
+
+It's recommended to install **Intel® Deep Learning Essentials** which only provides the necessary libraries with less size.
+
+The **Intel® oneAPI Base toolkit** and **Intel® Deep Learning Essentials** can be obtained from the official [Intel® oneAPI Base Toolkit](https://www.intel.com/content/www/us/en/developer/tools/oneapi/base-toolkit.html) page.
 
 Please follow the instructions for downloading and installing the Toolkit for Windows, and preferably keep the default installation values unchanged, notably the installation path *(`C:\Program Files (x86)\Intel\oneAPI` by default)*.
 
